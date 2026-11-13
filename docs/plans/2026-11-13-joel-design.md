@@ -14,6 +14,7 @@ One criterion drives every decision: **precision over recall**. Flagging a mista
 
 - `joel check <audio>`: the full pipeline, report in the terminal or as JSON.
 - `joel bench <dir>`: measures which transcribers preserve my mistakes, before trusting any of them.
+- `joel estimate <audio>`: what the LLM steps would cost for a recording, worked out from its length alone.
 - One local transcriber (Parakeet Ultra) and two cloud ones (ElevenLabs Scribe v3, OpenAI `gpt-transcribe`) behind the same interface.
 - Grammar mistakes and, as a separate category, unnatural usage ("I make a party").
 
@@ -33,6 +34,7 @@ joel check talk.m4a
 joel check talk.m4a --transcriber elevenlabs --json > talk.json
 joel check talk.m4a --show-uncertain
 joel bench recordings/ --transcriber parakeet --transcriber elevenlabs --transcriber openai
+joel estimate talk.m4a --model anthropic:claude-opus-5-5
 ```
 
 | Flag | Default | Effect |
@@ -42,6 +44,8 @@ joel bench recordings/ --transcriber parakeet --transcriber elevenlabs --transcr
 | `--min-confidence` | `0.67` | Filter threshold (step 6); value from the Cambridge paper |
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
 | `--json` | off | Prints the full result as JSON to stdout |
+
+`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the estimate's last line says so. `joel check` will price the tokens its calls actually used with the same function (see `render`).
 
 ## Pipeline
 
@@ -134,7 +138,7 @@ The LLM receives the sentence as numbered words and returns **only the indices t
  "output": {"drop": [12, 13, 16]}}
 ```
 
-Deterministic validation: an index outside the sentence is an error and the call is retried once. Dropped indices appear in `--json` for auditing.
+Deterministic validation: an index outside the sentence is an error and the call is retried once. If the retry is also wrong, the run stops with an error that names the sentence. Dropped indices appear in `--json` for auditing.
 
 ### 4. `correct` (LLM)
 
@@ -186,7 +190,9 @@ Terminal:
 
 When the transcriber gives no timestamps (`openai`), the time column is left out and the report says so once at the top.
 
-`--json`: raw transcript, sentences, dropped indices, LLM corrections, and every edit, including filtered ones with the reason.
+The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included.
+
+`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's input and output tokens, and its cost in US dollars.
 
 ## `joel bench`
 
@@ -228,6 +234,7 @@ Timestamp failures and per-file errors follow the diffs. A transcriber that fail
 | `errant` | 3.0.2 | Typed diff |
 | `spacy` + `en_core_web_sm` | 3.8.18 / 3.8.0 | Required by ERRANT |
 | `pydantic-ai-slim[...]` with every text-model provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any of those providers |
+| `genai-prices` | 0.2.3 | Token prices for `joel estimate` and for what a run cost |
 | `elevenlabs` (optional) | 2.78.0 | Cloud transcriber |
 | `openai` (optional) | 3.50.0 | Cloud transcriber |
 | `packaging` | 25.0 | Read joel's extras from its metadata, to tell a missing extra from any other missing module |

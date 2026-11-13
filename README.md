@@ -5,7 +5,7 @@
 Joel is a command-line tool for people who speak English as a second language. You give it a recording of yourself talking. It tells you which sentences had a grammar mistake, when in the recording you said them, and what you should have said.
 
 > [!IMPORTANT]
-> Joel is at an early stage. `joel bench` works; `joel check`, the command that reports your mistakes, doesn't exist yet. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
+> Joel is at an early stage. `joel bench` and `joel estimate` work; `joel check`, the command that reports your mistakes, doesn't exist yet. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
 
 ## What a report will look like
 
@@ -130,6 +130,17 @@ Yesterday he [go] to school, uh, and she [don't] like it.
 ```
 
 For each transcriber you get a table with the word error rate and how many of your bracketed mistakes came through untouched, then a line for every file where the transcript differs from what you said, like `01  yesterday he [go → went] to school`. A transcriber that can't run here, such as a cloud one without its extra or its API key, shows an error in place of its table, and the others still run.
+
+Before you send a long recording through a paid model, you can ask what it would cost:
+
+```
+$ joel estimate talk.m4a
+talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
+anthropic:claude-opus-5-5: about $0.73 for 250 calls (140250 input and 8250 output tokens)
+Assumes 150 words per minute and 12 words per sentence; a retried call costs extra.
+```
+
+The estimate only looks at how long the recording is. Each sentence costs two calls, one to set the hesitations aside and one to correct it. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
 
 ## Contributing
 
