@@ -157,7 +157,11 @@ The minimal-edit instruction is the core of the prompt: LLMs tend to rewrite the
 
 The clean sentence goes into ERRANT as text and **is tokenized by spaCy** (`tokenise=True`). Each spaCy token maps back to a `Word.index` by character offset (`token.idx`) in the string built from the words. Measured on 2026-11-13: with whitespace tokenization, "don't → doesn't" comes out as `R:PUNCT`; with spaCy ("do" + "n't") it comes out as `do → does R:VERB:SVA`, which is correct.
 
-Edits a listener can't hear are dropped from both lists. An edit is inaudible when its original and its correction have the same letters and digits once case is folded: a missing final period, "i → I", "Its → It's", "alot → a lot". The transcriber writes the punctuation and the case, not the speaker, so these edits would be about the ASR. They never reach the report, `--show-uncertain` included.
+Edits a listener can't hear are dropped from both lists. The step compares the original and the correction by ear: it ignores case, punctuation, apostrophes and spacing, reads digits, `&` and `%` as words, and treats a short list of homophones as one word (your/you're, their/there/they're, whose/who's, to/too/two, ok/okay). A missing final period, "i → I", "Its → It's", "alot → a lot", "2 → two" and "Your → You're" all go. ERRANT sometimes splits one of these into two edits ("Your → You" plus an inserted "'re"), so a run of adjacent edits that sound the same together goes too. The transcriber chose those spellings, not the speaker, so these edits would be about the ASR. They never reach the report, `--show-uncertain` included.
+
+ERRANT also merges a silent token into the real change next to it: "He go" against "He goes." comes out as `go → goes.` typed `R:OTHER`. So each edit first loses the silent tokens at its edges (punctuation, or a token that sounds like the one across from it), and ERRANT reclassifies what's left, which gives `go → goes R:VERB:SVA`.
+
+Known limits: pairs that only sound alike in some accents, like then/than, still count as mistakes, and so do ordinals and decimals ("1st → first", "3.5 → 3.50"). The comparison also costs a little recall, since "were → we're" has the same letters and is dropped.
 
 Output per edit: span in `Word.index`, original text, correction, ERRANT type, category (`grammar` or `naturalness`). An insertion has no original words, so its span is the word on each side of it, or the only neighbor at the start or end of a sentence.
 
@@ -265,4 +269,4 @@ Smaller choices, reversible in an afternoon:
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
-| Inaudible edits (punctuation, case, apostrophes, spacing) dropped in `diff_edits`, not marked uncertain | The transcriber wrote them, not the speaker, so no threshold makes them worth showing |
+| Inaudible edits (punctuation, case, apostrophes, spacing, common homophones, digits against number words) dropped in `diff_edits`, not marked uncertain | The transcriber wrote them, not the speaker, so no threshold makes them worth showing |
