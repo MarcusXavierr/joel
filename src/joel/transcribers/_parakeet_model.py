@@ -10,17 +10,14 @@ Resolution goes through the standard Hugging Face cache, in this order:
 
 from pathlib import Path
 
+import httpx
 from huggingface_hub import (
     constants,
     hf_hub_download,
     scan_cache_dir,
     try_to_load_from_cache,
 )
-from huggingface_hub.errors import (
-    CacheNotFound,
-    HfHubHTTPError,
-    LocalEntryNotFoundError,
-)
+from huggingface_hub.errors import CacheNotFound
 
 from joel.transcribers import TranscriberUnavailableError
 
@@ -61,15 +58,18 @@ def resolve_model(cache_dir: Path | None = None) -> Path:
                 cache_dir=cache,
             )
         )
-    # RuntimeError: with no network and HF_HUB_OFFLINE unset, huggingface_hub
-    # 1.18 retries on a client it has already closed and fails with one.
-    except (LocalEntryNotFoundError, HfHubHTTPError, RuntimeError) as exc:
+    # OSError: every huggingface_hub error, plus local trouble such as an
+    # unwritable cache or a full disk. httpx.HTTPError: a connection that drops
+    # mid-download or a proxy that refuses. RuntimeError: with no network and
+    # HF_HUB_OFFLINE unset, huggingface_hub 1.18 retries on a closed client.
+    except (OSError, httpx.HTTPError, RuntimeError) as exc:
         raise ModelUnavailableError(
             f"Could not get the Parakeet Ultra model. Joel needs {PARAKEET_FILE} "
             f"({PARAKEET_SIZE_BYTES / 1_000_000:.0f} MB) from the Hugging Face "
             f"repo {PARAKEET_REPO} at revision {PARAKEET_REVISION}, and it is not "
-            f"in the cache at {cache}. Connect to the internet once so Joel can "
-            f"download it. ({exc})"
+            f"in the cache at {cache}. Joel downloads it on first use, so this "
+            f"machine needs to reach Hugging Face once, and the cache needs to be "
+            f"writable with room for the file. ({exc})"
         ) from exc
 
 

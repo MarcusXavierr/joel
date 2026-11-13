@@ -123,15 +123,29 @@ def test_offline_without_the_model_explains_what_is_missing(cache: Path) -> None
     assert isinstance(excinfo.value, TranscriberUnavailableError)
 
 
-def test_hub_error_while_downloading_explains_what_is_missing(
-    cache: Path, monkeypatch: pytest.MonkeyPatch
+_HUB_URL = httpx.Request("GET", "https://huggingface.co")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # The Hub refuses: revision gone, repo gated, or a 5xx.
+        HfHubHTTPError(
+            "500 Server Error", response=httpx.Response(500, request=_HUB_URL)
+        ),
+        # The connection drops partway through the 740 MB download.
+        httpx.RemoteProtocolError("peer closed connection", request=_HUB_URL),
+        httpx.ProxyError("407 Proxy Authentication Required", request=_HUB_URL),
+        # The cache directory isn't writable.
+        PermissionError(13, "Permission denied", "/root/.cache/huggingface/hub"),
+    ],
+    ids=["hub-refuses", "connection-drops", "proxy-auth", "cache-not-writable"],
+)
+def test_failed_download_explains_what_is_missing(
+    error: Exception, cache: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Online, but the Hub refuses: revision gone, repo gated, or a 5xx.
     def failing_download(*args: Any, **kwargs: Any) -> str:
-        request = httpx.Request("GET", "https://huggingface.co")
-        raise HfHubHTTPError(
-            "500 Server Error", response=httpx.Response(500, request=request)
-        )
+        raise error
 
     monkeypatch.setattr(_parakeet_model, "hf_hub_download", failing_download)
 
@@ -141,7 +155,8 @@ def test_hub_error_while_downloading_explains_what_is_missing(
     message = str(excinfo.value)
     assert PARAKEET_REPO in message
     assert PARAKEET_REVISION in message
-    assert "500 Server Error" in message
+    assert str(cache) in message
+    assert str(error) in message
 
 
 @pytest.mark.usefixtures("unreachable_hub")
