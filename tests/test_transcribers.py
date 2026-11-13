@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,13 @@ def test_unknown_name_lists_valid_names(fake_package: str) -> None:
         load_transcriber("whisper", package=fake_package)
 
 
-def test_missing_extra_names_the_extra(fake_package: str) -> None:
+def test_missing_extra_names_the_extra(
+    fake_package: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A None entry in sys.modules makes `import openai` fail as if the
+    # SDK of joel's "openai" extra were not installed.
+    monkeypatch.setitem(sys.modules, "openai", None)
+
     with pytest.raises(TranscriberUnavailableError) as excinfo:
         load_transcriber("openai", package=fake_package)
 
@@ -39,6 +46,13 @@ def test_missing_dependency_outside_an_extra_is_not_blamed_on_an_extra(
 ) -> None:
     with pytest.raises(ModuleNotFoundError):
         load_transcriber("broken", package=fake_package)
+
+
+def test_missing_module_inside_an_extra_adapter_is_not_blamed_on_the_extra(
+    fake_package: str,
+) -> None:
+    with pytest.raises(ModuleNotFoundError, match="joel_fake_helper_not_installed"):
+        load_transcriber("openai", package=fake_package)
 
 
 def test_unknown_name_in_real_package() -> None:

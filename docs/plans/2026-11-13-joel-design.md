@@ -206,6 +206,7 @@ Output: a table per transcriber plus the diff of every file that diverges. No LL
 | `pydantic-ai-slim[...]` with every model-provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any provider |
 | `elevenlabs` (optional) | 2.78.0 | Cloud transcriber |
 | `openai` (optional) | 3.50.0 | Cloud transcriber |
+| `packaging` | 25.0 | Read joel's extras from its metadata, to tell a missing extra from any other missing module |
 | `ffmpeg` | system | Decode |
 
 All installed and exercised on Python 3.13 on 2026-11-13. CLI built on stdlib `argparse`. Pydantic AI is used only for the two LLM calls, with no agents and no tools.

@@ -2,7 +2,9 @@
 
 Each module ``joel/transcribers/<name>.py`` is the transcriber called ``<name>``
 and defines a no-argument ``create() -> Transcriber``. Modules whose name starts
-with ``_`` are helpers, not transcribers.
+with ``_`` are helpers, not transcribers. An adapter that needs an SDK from an
+optional extra shares the extra's name, and the SDK must be importable under its
+distribution name (``import openai`` for the ``openai`` package).
 """
 
 import importlib
@@ -10,6 +12,9 @@ import importlib.metadata
 import pkgutil
 from pathlib import Path
 from typing import Protocol
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from joel.transcript import Transcript
 
@@ -35,7 +40,8 @@ def load_transcriber(name: str, package: str = __name__) -> Transcriber:
     """Create the transcriber called ``name``.
 
     Raises TranscriberUnavailableError when the name is unknown or when the
-    adapter needs an optional extra of joel that isn't installed.
+    adapter's SDK comes from an optional extra of joel that isn't installed.
+    Any other missing module is re-raised as is.
     """
     names = transcriber_names(package)
     if name not in names:
@@ -46,7 +52,7 @@ def load_transcriber(name: str, package: str = __name__) -> Transcriber:
     try:
         module = importlib.import_module(f"{package}.{name}")
     except ModuleNotFoundError as exc:
-        if name not in _optional_extras():
+        if not _provided_by_extra(exc.name, extra=name):
             raise
         raise TranscriberUnavailableError(
             f"The '{name}' transcriber needs the optional extra joel[{name}]. "
@@ -56,5 +62,22 @@ def load_transcriber(name: str, package: str = __name__) -> Transcriber:
     return transcriber
 
 
-def _optional_extras() -> set[str]:
-    return set(importlib.metadata.metadata("joel").get_all("Provides-Extra") or [])
+def _provided_by_extra(module: str | None, extra: str) -> bool:
+    """Whether ``module`` is a top-level package that joel[extra] installs."""
+    if module is None:
+        return False
+    top_level = canonicalize_name(module.partition(".")[0])
+    return top_level in _extra_packages(extra)
+
+
+def _extra_packages(extra: str) -> set[str]:
+    packages: set[str] = set()
+    for line in importlib.metadata.metadata("joel").get_all("Requires-Dist") or []:
+        requirement = Requirement(line)
+        marker = requirement.marker
+        # A marker that also holds with no extra (python_version, say) belongs
+        # to a base dependency, not to this extra.
+        if marker and marker.evaluate({"extra": extra}):
+            if not marker.evaluate({"extra": ""}):
+                packages.add(canonicalize_name(requirement.name))
+    return packages
