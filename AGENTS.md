@@ -42,7 +42,7 @@ Fast tests come first. The default suite should finish in a few seconds, so it g
 * Tests that load the Parakeet model or need `ffmpeg` are marked `slow` and stay out of the default run. Keep them few: one end-to-end test over a fixture audio file is the target.
 * spaCy's `en_core_web_sm` takes a second or two to load. Load it once per session through a fixture, not per test.
 
-The test runner is pytest, added as a dev dependency with the first test (`uv add --dev pytest`). Default run: `uv run pytest -m "not slow"`.
+pytest, ruff, and mypy are dev dependencies. `uv run pytest` is the fast run: it skips tests marked `slow` by default, and `uv run pytest -m slow` runs only those. `uv run ruff check src tests` and `uv run mypy src tests` (strict mode) must pass as well.
 
 ## Runtime facts that bite
 

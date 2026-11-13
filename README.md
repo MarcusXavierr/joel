@@ -77,7 +77,7 @@ You also need API keys, set as environment variables:
 
 With the default transcriber your audio stays on your machine, but the text of what you said is sent to the language model provider to be corrected. The two cloud transcribers also upload the audio file.
 
-uv installs the Python packages for you. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). `pyproject.toml` doesn't declare them yet. [Issue #1](https://github.com/MarcusXavierr/joel/issues/1) adds them.
+uv installs the Python packages for you. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). `pyproject.toml` declares all of them, so `uv sync` installs them. Pydantic AI comes with every provider of text models it supports, so `--model` can name a model from any of them. TypeSafe is left out because its models answer typed questions and can't write corrected sentences.
 
 ## Installation
 
@@ -92,7 +92,7 @@ uv run joel
 
 The last command prints `Hello from joel!`, which is the whole program for now.
 
-Once the transcribers exist, the two cloud ones will be optional extras, installed with `uv sync --all-extras`. The first run of the local transcriber will download Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuse it from there afterwards. If another app already put the same file in that cache, Joel uses it and downloads nothing.
+The SDKs for the two cloud transcribers are optional extras, installed with `uv sync --all-extras`. The first run of the local transcriber will download Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuse it from there afterwards. If another app already put the same file in that cache, Joel uses it and downloads nothing.
 
 ## Usage
 
@@ -132,7 +132,7 @@ Joel is a personal tool built in the open. The work is split into [seven issues]
 Set up as in [Installation](#installation), then check that `uv run python --version` prints `Python 3.13.x`. A few rules keep the project consistent:
 
 - Use uv for everything (`uv add`, `uv run`, `uv sync`). Don't call `pip` or create a virtual environment by hand.
-- Write the test first and watch it fail before you write the code. The fast suite will run with `uv run pytest -m "not slow"` once [issue #1](https://github.com/MarcusXavierr/joel/issues/1) sets up pytest. No test calls a real language model or touches the network.
+- Write the test first and watch it fail before you write the code. The fast suite runs with `uv run pytest`, which skips tests marked `slow` (they load a model or need ffmpeg); `uv run pytest -m slow` runs those. No test calls a real language model or touches the network. `uv run ruff check src tests` and `uv run mypy src tests` must pass too.
 - Everything in the repo is in English: code, comments, docs, and commit messages.
 - Read the part of the [design](docs/plans/2026-11-13-joel-design.md) that covers the step you're changing. When the design and a [decision record](docs/decisions/README.md) disagree, the decision record wins.
 - An accepted decision record is never edited. If a decision changes, write a new record that replaces the old one.
