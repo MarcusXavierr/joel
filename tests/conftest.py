@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from errant.annotator import Annotator  # type: ignore[import-untyped]
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -12,10 +13,18 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
+from joel.edits import load_annotator
+
 
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="session")
+def annotator() -> Annotator:
+    """ERRANT with spaCy's en_core_web_sm, loaded once per test session."""
+    return load_annotator()
 
 
 @pytest.fixture
