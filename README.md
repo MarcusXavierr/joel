@@ -5,7 +5,7 @@
 Joel is a command-line tool for people who speak English as a second language. You give it a recording of yourself talking. It tells you which sentences had a grammar mistake, when in the recording you said them, and what you should have said.
 
 > [!IMPORTANT]
-> Joel is at the design stage and none of the commands below work yet. Today `uv run joel` prints a greeting and exits. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
+> Joel is at an early stage. `joel bench` works; `joel check`, the command that reports your mistakes, doesn't exist yet. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
 
 ## What a report will look like
 
@@ -87,16 +87,16 @@ Joel isn't on PyPI. Clone the repo and let uv set it up:
 git clone https://github.com/MarcusXavierr/joel.git
 cd joel
 uv sync
-uv run joel
+uv run joel --help
 ```
 
-The last command prints `Hello from joel!`, which is the whole program for now.
+The last command lists the commands that exist so far.
 
 The SDKs for the two cloud transcribers are optional extras, installed with `uv sync --all-extras`. The first run of the local transcriber will download Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuse it from there afterwards. If another app already put the same file in that cache, Joel uses it and downloads nothing.
 
 ## Usage
 
-These are the commands as designed. They don't run yet.
+`joel check` doesn't run yet. These are its commands as designed:
 
 ```bash
 # Report the mistakes in a recording
@@ -123,7 +123,13 @@ There is a second command, for finding out which transcriber to trust:
 joel bench recordings/ --transcriber parakeet --transcriber elevenlabs --transcriber openai
 ```
 
-A speech-to-text model can quietly fix your grammar while transcribing, turning "he go" into "he went", and then there is nothing left to report. `joel bench` measures how much each one does that. It takes a folder of recordings (`01.wav`, `02.wav`, ...) with a matching `.txt` for each, holding exactly what you said, mistakes included, and shows where each transcriber's text differs from yours.
+A speech-to-text model can quietly fix your grammar while transcribing, turning "he go" into "he went", and then there is nothing left to report. `joel bench` measures how much each one does that. It takes a folder of recordings (`01.wav`, `02.wav`, ...) with a matching `.txt` for each, holding exactly what you said, mistakes included. Put each mistake in square brackets:
+
+```
+Yesterday he [go] to school, uh, and she [don't] like it.
+```
+
+For each transcriber you get a table with the word error rate and how many of your bracketed mistakes came through untouched, then a line for every file where the transcript differs from what you said, like `01  yesterday he [go → went] to school`. Only `parakeet` is built so far; any other name shows an error in place of its table.
 
 ## Contributing
 

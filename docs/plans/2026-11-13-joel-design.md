@@ -184,16 +184,31 @@ When the transcriber gives no timestamps (`openai`), the time column is left out
 
 ## `joel bench`
 
-A directory of `NN.wav` + `NN.txt` pairs. The `.txt` holds the sentence **exactly as I said it**, mistakes included: it is the gold reference, not the correct form.
+A directory of `NN.wav` + `NN.txt` pairs. The `.txt` holds the sentence **exactly as I said it**, mistakes included: it is the gold reference, not the correct form. Square brackets mark each of my mistakes:
+
+```
+Yesterday he [go] to school, uh, and she [don't] like it. I [am agree] with you.
+```
+
+A bracket holds one or more whole words and can't be nested. The bench strips the brackets before comparing, so they change neither the diff nor the WER. A `.wav` without its `.txt`, a `.txt` without its `.wav`, a `.txt` that isn't UTF-8, or a bracket it can't read stops the bench before any transcriber runs; it lists every such problem and exits 1.
 
 For each transcriber and each file:
 
-- Word-level diff (case and punctuation ignored) between transcript and gold. A substitution where the gold has one of my mistakes = the ASR fixed my grammar.
-- WER against the gold.
-- Fraction of words with confidence present and non-zero.
-- Timestamps monotonic and within the audio duration, when the transcriber provides them.
+- Word-level alignment (Levenshtein, case and punctuation ignored) between transcript and gold.
+- WER: substituted, deleted, and inserted words over the number of gold words.
+- Mistakes kept: a bracketed mistake is kept when every word in it comes through unchanged and no word was inserted between two of its words. A word inserted at its edge, like an "uh" right before it, doesn't count. A lost mistake usually means the ASR fixed my grammar.
+- Fraction of words with confidence present and above zero.
+- Timestamps: `ok` when every word has a start and an end, starts never go backwards, and no word ends after the audio does; `failed`, naming the first word that breaks a rule; `n/a` when the transcriber gives no timestamps at all.
 
-Output: a table per transcriber plus the diff of every file that diverges. No LLM or ERRANT calls.
+Numbers aren't normalized, so "1" against "one" counts as a divergence. The recordings should avoid numerals, or the `.txt` should write them the way the transcribers do.
+
+Output, per transcriber: a table with `words`, `diverging`, `WER`, `mistakes kept`, `confidence`, and `timestamps` for each file plus a total row, then one inline diff per diverging file. `[said → heard]` marks each divergence and `∅` an empty side:
+
+```
+02  he [go → went] to school in [the → ∅] the room
+```
+
+Timestamp failures and per-file errors follow the diffs. A transcriber that fails to load, or fails on one file, doesn't stop the others, but it makes the exit code 1. No LLM or ERRANT calls.
 
 **Decision rule**: the transcriber that preserves nearly all mistakes across the ~20 sentences becomes the default. A transcriber without timestamps can't be the default; if `gpt-transcribe` wins, borrowed timestamps (ADR-0007) come back on the table. If every transcriber normalizes, stage 1 stops here and the strategy changes (CrisperWhisper verbatim × intended, more prompting, or fine-tuning).
 
@@ -263,3 +278,4 @@ Smaller choices, reversible in an afternoon:
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
+| Mistakes marked with [brackets] in bench `.txt` files | Lets the bench count mistakes kept automatically instead of me reading every diff |
