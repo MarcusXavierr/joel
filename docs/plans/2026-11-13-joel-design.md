@@ -45,7 +45,7 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
 | `--json` | off | Prints the full result as JSON to stdout |
 
-`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the estimate's last line says so. `joel check` will price the tokens its calls actually used with the same function (see `render`).
+`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the estimate's last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
 
 ## Pipeline
 
@@ -186,13 +186,20 @@ Terminal:
 00:41.0–00:41.6  naturalness
   said:    I make a party last week.
   better:  I threw a party last week.
+           make → threw
+
+Cost: $0.02 for 6 model calls (3204 input and 144 output tokens) with anthropic:claude-opus-5-5.
 ```
 
-When the transcriber gives no timestamps (`openai`), the time column is left out and the report says so once at the top.
+Entries come in spoken order, one per edit, so a sentence with two mistakes shows up twice. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". The arrow line is the edit itself, with `∅` on the empty side of an insertion or a deletion. When no entry is left to show, the report says `No mistakes found.`
 
-The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included.
+When the transcriber gives no timestamps (`openai`), the time column is left out and the report says so once at the top. A transcriber that gives no confidence scores gets a note at the top too, since nothing could be held back as uncertain. An edit on a word that lacks a time, in a transcript that has times, shows `--:--.-–--:--.-`.
 
-`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's input and output tokens, and its cost in US dollars.
+Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` With `--show-uncertain` they appear in place, with `uncertain` at the end of the header and an `unsure:` line that names the least confident word and its score.
+
+The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included. If `genai-prices` has no price for the model, the run still succeeds and the line says the cost is unknown, with the call and token counts.
+
+`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's model calls, input and output tokens, and its cost in US dollars (`null` when it can't be priced). The terminal report is rebuilt from this document alone, so `--show-uncertain` doesn't change it.
 
 ## `joel bench`
 
@@ -288,6 +295,7 @@ Smaller choices, reversible in an afternoon:
 | --- | --- |
 | One sentence per LLM call, neighbors as context | Local, traceable edits; context resolves tense and reference |
 | Low-confidence edits hidden by default | Precision over recall |
+| At most 8 model calls in flight, every cleanup before any correction | A correction reads its neighbors' clean text, so cleanup has to finish first; 8 keeps long recordings fast while keeping each burst of requests small |
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
