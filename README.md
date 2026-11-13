@@ -5,7 +5,7 @@
 Joel is a command-line tool for people who speak English as a second language. You give it a recording of yourself talking. It tells you which sentences had a grammar mistake, when in the recording you said them, and what you should have said.
 
 > [!IMPORTANT]
-> Joel is at the design stage and none of the commands below work yet. Today `uv run joel` prints a greeting and exits. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
+> Joel is still being built. Of the commands below, only `joel estimate` works so far; `joel check` and `joel bench` don't exist yet. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
 
 ## What a report will look like
 
@@ -87,16 +87,16 @@ Joel isn't on PyPI. Clone the repo and let uv set it up:
 git clone https://github.com/MarcusXavierr/joel.git
 cd joel
 uv sync
-uv run joel
+uv run joel --help
 ```
 
-The last command prints `Hello from joel!`, which is the whole program for now.
+The last command lists Joel's commands. Only `estimate` is there for now.
 
 The SDKs for the two cloud transcribers are optional extras, installed with `uv sync --all-extras`. The first run of the local transcriber will download Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuse it from there afterwards. If another app already put the same file in that cache, Joel uses it and downloads nothing.
 
 ## Usage
 
-These are the commands as designed. They don't run yet.
+`joel check` and `joel bench` are described as designed. They don't run yet.
 
 ```bash
 # Report the mistakes in a recording
@@ -124,6 +124,17 @@ joel bench recordings/ --transcriber parakeet --transcriber elevenlabs --transcr
 ```
 
 A speech-to-text model can quietly fix your grammar while transcribing, turning "he go" into "he went", and then there is nothing left to report. `joel bench` measures how much each one does that. It takes a folder of recordings (`01.wav`, `02.wav`, ...) with a matching `.txt` for each, holding exactly what you said, mistakes included, and shows where each transcriber's text differs from yours.
+
+Before you send a long recording through a paid model, you can ask what it would cost:
+
+```
+$ joel estimate talk.m4a
+talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
+anthropic:claude-opus-5-5: about $0.73 for 250 calls (140250 input and 8250 output tokens)
+Assumes 150 words per minute and 12 words per sentence; a retried call costs extra.
+```
+
+The estimate only looks at how long the recording is. Each sentence costs two calls, one to set the hesitations aside and one to correct it. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
 
 ## Contributing
 
