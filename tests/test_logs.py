@@ -1,18 +1,8 @@
 import logging
-from collections.abc import Iterator
 
 import pytest
 
 from joel.logs import configure_logging
-
-
-@pytest.fixture
-def restore_root_logger() -> Iterator[None]:
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    yield
-    root.handlers[:] = handlers
-    root.setLevel(level)
 
 
 @pytest.mark.usefixtures("restore_root_logger")

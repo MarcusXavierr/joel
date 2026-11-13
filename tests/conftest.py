@@ -1,4 +1,5 @@
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,16 @@ def anyio_backend() -> str:
 def annotator() -> Annotator:
     """ERRANT with spaCy's en_core_web_sm, loaded once per test session."""
     return load_annotator()
+
+
+@pytest.fixture
+def restore_root_logger() -> Iterator[None]:
+    """Undo configure_logging(), which rebinds the root logger to this test's stderr."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)
 
 
 @pytest.fixture
