@@ -2,6 +2,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from errant.annotator import Annotator  # type: ignore[import-untyped]
+
+from joel.edits import load_annotator
+
+
+@pytest.fixture(scope="session")
+def annotator() -> Annotator:
+    """ERRANT with spaCy's en_core_web_sm, loaded once per test session."""
+    return load_annotator()
 
 
 @pytest.fixture
