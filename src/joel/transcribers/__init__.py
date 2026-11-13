@@ -28,9 +28,10 @@ class Transcriber(Protocol):
 class TranscriberUnavailableError(Exception):
     """A transcriber that can't run here.
 
-    load_transcriber raises it for an unknown name or a missing optional extra.
-    An adapter's transcribe() may raise a subclass for something only found at
-    run time, such as a model that is neither cached nor downloadable.
+    load_transcriber raises it for an unknown name, a missing optional extra, or
+    a cloud adapter whose API key isn't set. An adapter's transcribe() may raise
+    a subclass for something only found at run time, such as a model that is
+    neither cached nor downloadable.
     """
 
 
@@ -44,9 +45,10 @@ def transcriber_names(package: str = __name__) -> list[str]:
 def load_transcriber(name: str, package: str = __name__) -> Transcriber:
     """Create the transcriber called ``name``.
 
-    Raises TranscriberUnavailableError when the name is unknown or when the
-    adapter's SDK comes from an optional extra of joel that isn't installed.
-    Any other missing module is re-raised as is.
+    Raises TranscriberUnavailableError when the name is unknown, when the
+    adapter's SDK comes from an optional extra of joel that isn't installed, or
+    when a cloud adapter's API key isn't set. Any other missing module is
+    re-raised as is.
     """
     names = transcriber_names(package)
     if name not in names:

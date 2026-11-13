@@ -1,0 +1,338 @@
+{
+  "language_code": "eng",
+  "language_probability": 0.9957336187362671,
+  "text": "Yesterday he go to school, uh, and she don't like it. There is many people in the, the room. I am agree with you.",
+  "words": [
+    {
+      "text": "Yesterday",
+      "start": 0.08,
+      "end": 0.68,
+      "type": "word",
+      "logprob": -0.007160595152527094
+    },
+    {
+      "text": " ",
+      "start": 0.68,
+      "end": 0.76,
+      "type": "spacing",
+      "logprob": -0.3133601248264313
+    },
+    {
+      "text": "he",
+      "start": 0.76,
+      "end": 0.9,
+      "type": "word",
+      "logprob": -0.3133601248264313
+    },
+    {
+      "text": " ",
+      "start": 0.9,
+      "end": 0.94,
+      "type": "spacing",
+      "logprob": -0.00003755022044060752
+    },
+    {
+      "text": "go",
+      "start": 0.94,
+      "end": 1.08,
+      "type": "word",
+      "logprob": -0.00003755022044060752
+    },
+    {
+      "text": " ",
+      "start": 1.08,
+      "end": 1.18,
+      "type": "spacing",
+      "logprob": -1.4305104514278355e-6
+    },
+    {
+      "text": "to",
+      "start": 1.18,
+      "end": 1.26,
+      "type": "word",
+      "logprob": -1.4305104514278355e-6
+    },
+    {
+      "text": " ",
+      "start": 1.26,
+      "end": 1.34,
+      "type": "spacing",
+      "logprob": -0.000027656173188006505
+    },
+    {
+      "text": "school,",
+      "start": 1.34,
+      "end": 1.8,
+      "type": "word",
+      "logprob": -0.000057812105556617356
+    },
+    {
+      "text": " ",
+      "start": 1.8,
+      "end": 2.18,
+      "type": "spacing",
+      "logprob": -0.0003054867556784302
+    },
+    {
+      "text": "uh,",
+      "start": 2.18,
+      "end": 2.36,
+      "type": "word",
+      "logprob": -0.00020596254201639871
+    },
+    {
+      "text": " ",
+      "start": 2.36,
+      "end": 2.36,
+      "type": "spacing",
+      "logprob": -5.006777428206988e-6
+    },
+    {
+      "text": "and",
+      "start": 2.68,
+      "end": 2.84,
+      "type": "word",
+      "logprob": -5.006777428206988e-6
+    },
+    {
+      "text": " ",
+      "start": 2.84,
+      "end": 2.96,
+      "type": "spacing",
+      "logprob": -0.0020343814976513386
+    },
+    {
+      "text": "she",
+      "start": 2.96,
+      "end": 3.12,
+      "type": "word",
+      "logprob": -0.0020343814976513386
+    },
+    {
+      "text": " ",
+      "start": 3.12,
+      "end": 3.16,
+      "type": "spacing",
+      "logprob": -0.000052689116273541003
+    },
+    {
+      "text": "don't",
+      "start": 3.16,
+      "end": 3.54,
+      "type": "word",
+      "logprob": -0.00003402149013709277
+    },
+    {
+      "text": " ",
+      "start": 3.54,
+      "end": 3.6,
+      "type": "spacing",
+      "logprob": -4.768360213347478e-6
+    },
+    {
+      "text": "like",
+      "start": 3.6,
+      "end": 3.94,
+      "type": "word",
+      "logprob": -4.768360213347478e-6
+    },
+    {
+      "text": " ",
+      "start": 3.94,
+      "end": 4.019,
+      "type": "spacing",
+      "logprob": -9.536738616588991e-7
+    },
+    {
+      "text": "it.",
+      "start": 4.019,
+      "end": 4.16,
+      "type": "word",
+      "logprob": -3.77494567752971e-6
+    },
+    {
+      "text": " ",
+      "start": 4.16,
+      "end": 4.16,
+      "type": "spacing",
+      "logprob": -0.00002253030106658116
+    },
+    {
+      "text": "There",
+      "start": 4.72,
+      "end": 4.9,
+      "type": "word",
+      "logprob": -0.00002253030106658116
+    },
+    {
+      "text": " ",
+      "start": 4.9,
+      "end": 4.98,
+      "type": "spacing",
+      "logprob": -2.145764938177308e-6
+    },
+    {
+      "text": "is",
+      "start": 4.98,
+      "end": 5.1,
+      "type": "word",
+      "logprob": -2.145764938177308e-6
+    },
+    {
+      "text": " ",
+      "start": 5.1,
+      "end": 5.14,
+      "type": "spacing",
+      "logprob": -0.00004136476854910143
+    },
+    {
+      "text": "many",
+      "start": 5.14,
+      "end": 5.4,
+      "type": "word",
+      "logprob": -0.00004136476854910143
+    },
+    {
+      "text": " ",
+      "start": 5.4,
+      "end": 5.52,
+      "type": "spacing",
+      "logprob": -4.291525328881107e-6
+    },
+    {
+      "text": "people",
+      "start": 5.52,
+      "end": 5.84,
+      "type": "word",
+      "logprob": -4.291525328881107e-6
+    },
+    {
+      "text": " ",
+      "start": 5.84,
+      "end": 5.9,
+      "type": "spacing",
+      "logprob": -1.6689286894688848e-6
+    },
+    {
+      "text": "in",
+      "start": 5.9,
+      "end": 6.0,
+      "type": "word",
+      "logprob": -1.6689286894688848e-6
+    },
+    {
+      "text": " ",
+      "start": 6.0,
+      "end": 6.04,
+      "type": "spacing",
+      "logprob": -0.00005578839045483619
+    },
+    {
+      "text": "the,",
+      "start": 6.04,
+      "end": 6.14,
+      "type": "word",
+      "logprob": -0.00039582096724188887
+    },
+    {
+      "text": " ",
+      "start": 6.14,
+      "end": 6.18,
+      "type": "spacing",
+      "logprob": -4.172316494077677e-6
+    },
+    {
+      "text": "the",
+      "start": 6.18,
+      "end": 6.24,
+      "type": "word",
+      "logprob": -4.172316494077677e-6
+    },
+    {
+      "text": " ",
+      "start": 6.24,
+      "end": 6.32,
+      "type": "spacing",
+      "logprob": -0.000010490362910786644
+    },
+    {
+      "text": "room.",
+      "start": 6.32,
+      "end": 6.72,
+      "type": "word",
+      "logprob": -0.000010752620255516376
+    },
+    {
+      "text": " ",
+      "start": 6.72,
+      "end": 6.72,
+      "type": "spacing",
+      "logprob": -0.000023841574147809297
+    },
+    {
+      "text": "I",
+      "start": 7.3,
+      "end": 7.34,
+      "type": "word",
+      "logprob": -0.000023841574147809297
+    },
+    {
+      "text": " ",
+      "start": 7.34,
+      "end": 7.36,
+      "type": "spacing",
+      "logprob": -0.000047801782784517854
+    },
+    {
+      "text": "am",
+      "start": 7.38,
+      "end": 7.46,
+      "type": "word",
+      "logprob": -0.000047801782784517854
+    },
+    {
+      "text": " ",
+      "start": 7.46,
+      "end": 7.52,
+      "type": "spacing",
+      "logprob": -0.0005756151513196528
+    },
+    {
+      "text": "agree",
+      "start": 7.52,
+      "end": 7.88,
+      "type": "word",
+      "logprob": -0.0005756151513196528
+    },
+    {
+      "text": " ",
+      "start": 7.88,
+      "end": 7.92,
+      "type": "spacing",
+      "logprob": -4.172316494077677e-6
+    },
+    {
+      "text": "with",
+      "start": 7.92,
+      "end": 8.06,
+      "type": "word",
+      "logprob": -4.172316494077677e-6
+    },
+    {
+      "text": " ",
+      "start": 8.06,
+      "end": 8.119,
+      "type": "spacing",
+      "logprob": -2.145764938177308e-6
+    },
+    {
+      "text": "you.",
+      "start": 8.119,
+      "end": 8.24,
+      "type": "word",
+      "logprob": -5.483595600708213e-6
+    }
+  ],
+  "transcription_id": "7sBD85Pqlq30A8UZANg5",
+  "audio_duration_secs": 8.72875
+}
