@@ -196,7 +196,7 @@ For each transcriber and each file:
 
 - Word-level alignment (Levenshtein, case and punctuation ignored) between transcript and gold.
 - WER: substituted, deleted, and inserted words over the number of gold words.
-- Mistakes kept: a bracketed mistake is kept when every word in it comes through unchanged and no word was inserted between two of its words. A word inserted at its edge, like an "uh" right before it, doesn't count. A lost mistake usually means the ASR fixed my grammar.
+- Mistakes kept: a bracketed mistake is kept when every word in it comes through unchanged and no word was inserted between two of its words. A word inserted at its edge, like an "uh" right before it, doesn't count. A lost mistake usually means the ASR fixed my grammar. When a transcriber drops one copy of a repeated word, the alignment always drops the first copy, so a repetition I want counted goes in brackets whole, `[the the]`; `the [the]` would still count as kept.
 - Fraction of words with confidence present and above zero.
 - Timestamps: `ok` when every word has a start and an end, starts never go backwards, and no word ends after the audio does; `failed`, naming the first word that breaks a rule; `n/a` when the transcriber gives no timestamps at all.
 

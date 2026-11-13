@@ -11,6 +11,9 @@ from joel.cli import main
 
 AUDIO = Path(__file__).parent / "fixtures" / "audio" / "acceptance.wav"
 
+# main() configures logging for the whole process; each test gets the root back.
+pytestmark = pytest.mark.usefixtures("restore_root_logger")
+
 
 def test_a_recording_without_its_text_stops_before_any_transcriber(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -105,3 +108,6 @@ def test_bench_runs_parakeet_end_to_end(tmp_path: Path) -> None:
     assert "== parakeet ==" in result.stdout
     assert "4/4" in result.stdout
     assert "0.0%" in result.stdout
+    # The words end inside the audio, so audio_duration_ms measured it right.
+    rows = [line.split() for line in result.stdout.splitlines()]
+    assert [row[-1] for row in rows if row[:1] == ["01"]] == ["ok"]

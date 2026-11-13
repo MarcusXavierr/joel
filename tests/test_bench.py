@@ -18,6 +18,7 @@ from joel.bench import (
     count_confident,
     diverging,
     load_recordings,
+    measure_file,
     mistakes_kept,
     normalize,
     parse_gold,
@@ -411,6 +412,18 @@ def test_a_transcriber_that_fails_to_load_does_not_stop_the_others(
     )
     assert runs[1].error is None
     assert [f.result is not None for f in runs[1].files] == [True]
+
+
+def test_what_the_transcriber_wrote_is_compared_ignoring_case_and_punctuation() -> None:
+    recording = Recording("01", Path("01.wav"), parse_gold("Yesterday he [don't] go."))
+    transcript = _transcript(
+        _word(0, "Yesterday,"), _word(1, "HE"), _word(2, "don’t"), _word(3, "go.")
+    )
+
+    result = measure_file(recording, transcript, _no_duration)
+
+    assert diverging(result.steps) == 0
+    assert result.mistakes_kept == 1
 
 
 def test_a_file_that_fails_does_not_stop_the_other_files(tmp_path: Path) -> None:
