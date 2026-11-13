@@ -203,6 +203,7 @@ Output: a table per transcriber plus the diff of every file that diverges. No LL
 | --- | --- | --- |
 | `transcribe-cpp` | 0.4.2 | Local Parakeet Ultra |
 | `huggingface_hub` | 1.18.0 | Resolve or download the GGUF through the standard Hugging Face cache |
+| `httpx` | 0.28.1 | Comes with `huggingface_hub`; declared because model resolution catches its network errors |
 | `errant` | 3.0.2 | Typed diff |
 | `spacy` + `en_core_web_sm` | 3.8.18 / 3.8.0 | Required by ERRANT |
 | `pydantic-ai-slim[...]` with every text-model provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any of those providers |
