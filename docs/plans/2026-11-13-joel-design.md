@@ -123,7 +123,7 @@ Cloud SDKs are optional dependencies (`joel[elevenlabs]`, `joel[openai]`).
 
 ### 2. `split_sentences`
 
-Splits the transcript into sentences on terminal punctuation (`.`, `?`, `!`) attached to `Word.text`. All three transcribers return punctuated text. Output: a list of sentences, each a list of `Word.index`.
+Splits the transcript into sentences on terminal punctuation (`.`, `?`, `!`) attached to `Word.text`. All three transcribers return punctuated text. A closing quote or bracket after the mark still ends the sentence (`it."`). Words after the last mark form one more sentence, so no word is lost. Output: a list of sentences, each a list of `Word.index`.
 
 ### 3. `strip_disfluencies` (LLM)
 
@@ -153,15 +153,17 @@ The minimal-edit instruction is the core of the prompt: LLMs tend to rewrite the
 ### 5. `diff_edits` (ERRANT)
 
 - **Grammar mistakes**: ERRANT between the clean sentence and `grammatical`.
-- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits whose original span overlaps a grammar mistake.
+- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits that overlap a grammar mistake. `natural` is written on top of `grammatical`, so its diff repeats every grammar edit, and this rule is what removes the repeats. Two edits overlap when they touch the same `Word.index`, the way "do" and "n't" are one spoken word. When either edit is an insertion, they overlap when their token spans touch, which also drops an insertion right next to a grammar mistake. A few real naturalness edits get lost that way; precision comes first.
 
 The clean sentence goes into ERRANT as text and **is tokenized by spaCy** (`tokenise=True`). Each spaCy token maps back to a `Word.index` by character offset (`token.idx`) in the string built from the words. Measured on 2026-11-13: with whitespace tokenization, "don't → doesn't" comes out as `R:PUNCT`; with spaCy ("do" + "n't") it comes out as `do → does R:VERB:SVA`, which is correct.
 
-Output per edit: span in `Word.index`, original text, correction, ERRANT type, category (`grammar` or `naturalness`).
+Edits a listener can't hear are dropped from both lists. An edit is inaudible when its original and its correction have the same letters and digits once case is folded: a missing final period, "i → I", "Its → It's", "alot → a lot". The transcriber writes the punctuation and the case, not the speaker, so these edits would be about the ASR. They never reach the report, `--show-uncertain` included.
+
+Output per edit: span in `Word.index`, original text, correction, ERRANT type, category (`grammar` or `naturalness`). An insertion has no original words, so its span is the word on each side of it, or the only neighbor at the start or end of a sentence.
 
 ### 6. `filter_edits`
 
-Edit confidence = minimum confidence of the original words in the span. Below `--min-confidence`, the edit is dropped from the report (probably an ASR error) and only appears with `--show-uncertain`, marked. A pure insertion (empty span) uses the neighboring words. Words with `confidence = None` don't filter; the report notes that the transcriber provides no confidence.
+Edit confidence = minimum confidence of the original words in the span; for an insertion, those are its neighbors (step 5). An edit whose confidence is strictly below `--min-confidence` is dropped from the report (probably an ASR error) and only appears with `--show-uncertain`, marked with the least confident word and its score. An edit exactly at the threshold stays. Words with `confidence = None` don't filter; the report notes that the transcriber provides no confidence.
 
 ### 7. `render`
 
@@ -263,3 +265,4 @@ Smaller choices, reversible in an afternoon:
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
+| Inaudible edits (punctuation, case, apostrophes, spacing) dropped in `diff_edits`, not marked uncertain | The transcriber wrote them, not the speaker, so no threshold makes them worth showing |
