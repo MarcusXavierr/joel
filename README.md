@@ -77,7 +77,7 @@ You also need API keys, set as environment variables:
 
 With the default transcriber your audio stays on your machine, but the text of what you said is sent to the language model provider to be corrected. The two cloud transcribers also upload the audio file.
 
-uv installs the Python packages for you. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). `pyproject.toml` declares all of them, so `uv sync` installs them. Pydantic AI comes with every model provider it supports, so `--model` can name a model from any of them.
+uv installs the Python packages for you. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). `pyproject.toml` declares all of them, so `uv sync` installs them. Pydantic AI comes with every provider of text models it supports, so `--model` can name a model from any of them. TypeSafe is left out because its models answer typed questions and can't write corrected sentences.
 
 ## Installation
 

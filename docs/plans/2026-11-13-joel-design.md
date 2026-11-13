@@ -203,7 +203,7 @@ Output: a table per transcriber plus the diff of every file that diverges. No LL
 | `huggingface_hub` | 1.18.0 | Resolve or download the GGUF through the standard Hugging Face cache |
 | `errant` | 3.0.2 | Typed diff |
 | `spacy` + `en_core_web_sm` | 3.8.18 / 3.8.0 | Required by ERRANT |
-| `pydantic-ai-slim[...]` with every model-provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any provider |
+| `pydantic-ai-slim[...]` with every text-model provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any of those providers |
 | `elevenlabs` (optional) | 2.78.0 | Cloud transcriber |
 | `openai` (optional) | 3.50.0 | Cloud transcriber |
 | `packaging` | 25.0 | Read joel's extras from its metadata, to tell a missing extra from any other missing module |
