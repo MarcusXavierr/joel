@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-joel = "joel:main"
+joel = "joel.cli:main"
 
 [project.optional-dependencies]
 elevenlabs = [
