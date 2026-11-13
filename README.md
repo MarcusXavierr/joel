@@ -137,4 +137,4 @@ Set up as in [Installation](#installation), then check that `uv run python --ver
 - Read the part of the [design](docs/plans/2026-11-13-joel-design.md) that covers the step you're changing. When the design and a [decision record](docs/decisions/README.md) disagree, the decision record wins.
 - An accepted decision record is never edited. If a decision changes, write a new record that replaces the old one.
 
-Regenerating the synthetic test recording needs [espeak-ng](https://github.com/espeak-ng/espeak-ng), which nothing else uses. If you work with a coding agent, [AGENTS.md](AGENTS.md) has the same rules written for it.
+Regenerating the synthetic test recording, `tests/fixtures/audio/acceptance.wav`, needs [espeak-ng](https://github.com/espeak-ng/espeak-ng), which nothing else uses. The exact command is in a comment in `tests/test_parakeet.py`. If you work with a coding agent, [AGENTS.md](AGENTS.md) has the same rules written for it.

@@ -1299,6 +1299,7 @@ source = { editable = "." }
 dependencies = [
     { name = "en-core-web-sm" },
     { name = "errant" },
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "packaging" },
     { name = "pydantic" },
@@ -1327,6 +1328,7 @@ requires-dist = [
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=2.78.0" },
     { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "errant", specifier = ">=3.0.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=1.18.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=3.50.0" },
     { name = "packaging", specifier = ">=25.0" },

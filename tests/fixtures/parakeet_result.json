@@ -1,0 +1,550 @@
+{
+  "text": "Yesterday he go to school, uh, and she don't like it. There is many people in the the room. I am agree with you.",
+  "words": [
+    {
+      "text": "Yesterday",
+      "t0_ms": 0,
+      "t1_ms": 800,
+      "seg_index": 0,
+      "first_token": 0,
+      "n_tokens": 4
+    },
+    {
+      "text": "he",
+      "t0_ms": 800,
+      "t1_ms": 960,
+      "seg_index": 0,
+      "first_token": 4,
+      "n_tokens": 1
+    },
+    {
+      "text": "go",
+      "t0_ms": 960,
+      "t1_ms": 1200,
+      "seg_index": 0,
+      "first_token": 5,
+      "n_tokens": 1
+    },
+    {
+      "text": "to",
+      "t0_ms": 1200,
+      "t1_ms": 1440,
+      "seg_index": 0,
+      "first_token": 6,
+      "n_tokens": 1
+    },
+    {
+      "text": "school,",
+      "t0_ms": 1440,
+      "t1_ms": 2000,
+      "seg_index": 0,
+      "first_token": 7,
+      "n_tokens": 3
+    },
+    {
+      "text": "uh,",
+      "t0_ms": 2000,
+      "t1_ms": 2560,
+      "seg_index": 0,
+      "first_token": 10,
+      "n_tokens": 2
+    },
+    {
+      "text": "and",
+      "t0_ms": 2560,
+      "t1_ms": 2880,
+      "seg_index": 0,
+      "first_token": 12,
+      "n_tokens": 1
+    },
+    {
+      "text": "she",
+      "t0_ms": 2880,
+      "t1_ms": 3200,
+      "seg_index": 0,
+      "first_token": 13,
+      "n_tokens": 1
+    },
+    {
+      "text": "don't",
+      "t0_ms": 3200,
+      "t1_ms": 3760,
+      "seg_index": 0,
+      "first_token": 14,
+      "n_tokens": 3
+    },
+    {
+      "text": "like",
+      "t0_ms": 3760,
+      "t1_ms": 4080,
+      "seg_index": 0,
+      "first_token": 17,
+      "n_tokens": 1
+    },
+    {
+      "text": "it.",
+      "t0_ms": 4080,
+      "t1_ms": 4560,
+      "seg_index": 0,
+      "first_token": 18,
+      "n_tokens": 2
+    },
+    {
+      "text": "There",
+      "t0_ms": 4560,
+      "t1_ms": 4960,
+      "seg_index": 0,
+      "first_token": 20,
+      "n_tokens": 2
+    },
+    {
+      "text": "is",
+      "t0_ms": 4960,
+      "t1_ms": 5200,
+      "seg_index": 0,
+      "first_token": 22,
+      "n_tokens": 1
+    },
+    {
+      "text": "many",
+      "t0_ms": 5200,
+      "t1_ms": 5600,
+      "seg_index": 0,
+      "first_token": 23,
+      "n_tokens": 2
+    },
+    {
+      "text": "people",
+      "t0_ms": 5600,
+      "t1_ms": 5840,
+      "seg_index": 0,
+      "first_token": 25,
+      "n_tokens": 1
+    },
+    {
+      "text": "in",
+      "t0_ms": 5840,
+      "t1_ms": 6000,
+      "seg_index": 0,
+      "first_token": 26,
+      "n_tokens": 1
+    },
+    {
+      "text": "the",
+      "t0_ms": 6000,
+      "t1_ms": 6160,
+      "seg_index": 0,
+      "first_token": 27,
+      "n_tokens": 1
+    },
+    {
+      "text": "the",
+      "t0_ms": 6160,
+      "t1_ms": 6400,
+      "seg_index": 0,
+      "first_token": 28,
+      "n_tokens": 1
+    },
+    {
+      "text": "room.",
+      "t0_ms": 6400,
+      "t1_ms": 7040,
+      "seg_index": 0,
+      "first_token": 29,
+      "n_tokens": 3
+    },
+    {
+      "text": "I",
+      "t0_ms": 7040,
+      "t1_ms": 7200,
+      "seg_index": 0,
+      "first_token": 32,
+      "n_tokens": 1
+    },
+    {
+      "text": "am",
+      "t0_ms": 7200,
+      "t1_ms": 7360,
+      "seg_index": 0,
+      "first_token": 33,
+      "n_tokens": 1
+    },
+    {
+      "text": "agree",
+      "t0_ms": 7520,
+      "t1_ms": 7920,
+      "seg_index": 0,
+      "first_token": 34,
+      "n_tokens": 2
+    },
+    {
+      "text": "with",
+      "t0_ms": 7920,
+      "t1_ms": 8160,
+      "seg_index": 0,
+      "first_token": 36,
+      "n_tokens": 1
+    },
+    {
+      "text": "you.",
+      "t0_ms": 8160,
+      "t1_ms": 8560,
+      "seg_index": 0,
+      "first_token": 37,
+      "n_tokens": 2
+    }
+  ],
+  "tokens": [
+    {
+      "text": " Y",
+      "id": 990,
+      "p": 0.994184672832489,
+      "t0_ms": 0,
+      "t1_ms": 240,
+      "seg_index": 0,
+      "word_index": 0
+    },
+    {
+      "text": "ester",
+      "id": 3246,
+      "p": 0.9999629855155945,
+      "t0_ms": 240,
+      "t1_ms": 400,
+      "seg_index": 0,
+      "word_index": 0
+    },
+    {
+      "text": "da",
+      "id": 591,
+      "p": 0.9999998211860657,
+      "t0_ms": 400,
+      "t1_ms": 560,
+      "seg_index": 0,
+      "word_index": 0
+    },
+    {
+      "text": "y",
+      "id": 7893,
+      "p": 0.9999995231628418,
+      "t0_ms": 560,
+      "t1_ms": 800,
+      "seg_index": 0,
+      "word_index": 0
+    },
+    {
+      "text": " he",
+      "id": 813,
+      "p": 0.9998668432235718,
+      "t0_ms": 800,
+      "t1_ms": 960,
+      "seg_index": 0,
+      "word_index": 1
+    },
+    {
+      "text": " go",
+      "id": 1455,
+      "p": 0.9873679280281067,
+      "t0_ms": 960,
+      "t1_ms": 1200,
+      "seg_index": 0,
+      "word_index": 2
+    },
+    {
+      "text": " to",
+      "id": 366,
+      "p": 0.9998736381530762,
+      "t0_ms": 1200,
+      "t1_ms": 1440,
+      "seg_index": 0,
+      "word_index": 3
+    },
+    {
+      "text": " sch",
+      "id": 1209,
+      "p": 0.9999995827674866,
+      "t0_ms": 1440,
+      "t1_ms": 1680,
+      "seg_index": 0,
+      "word_index": 4
+    },
+    {
+      "text": "ool",
+      "id": 4452,
+      "p": 1.0,
+      "t0_ms": 1680,
+      "t1_ms": 1840,
+      "seg_index": 0,
+      "word_index": 4
+    },
+    {
+      "text": ",",
+      "id": 7877,
+      "p": 0.9959238767623901,
+      "t0_ms": 1840,
+      "t1_ms": 2000,
+      "seg_index": 0,
+      "word_index": 4
+    },
+    {
+      "text": " uh",
+      "id": 1282,
+      "p": 0.9950274229049683,
+      "t0_ms": 2000,
+      "t1_ms": 2240,
+      "seg_index": 0,
+      "word_index": 5
+    },
+    {
+      "text": ",",
+      "id": 7877,
+      "p": 0.9706496000289917,
+      "t0_ms": 2400,
+      "t1_ms": 2560,
+      "seg_index": 0,
+      "word_index": 5
+    },
+    {
+      "text": " and",
+      "id": 575,
+      "p": 0.9999980926513672,
+      "t0_ms": 2560,
+      "t1_ms": 2880,
+      "seg_index": 0,
+      "word_index": 6
+    },
+    {
+      "text": " she",
+      "id": 4797,
+      "p": 0.9969903230667114,
+      "t0_ms": 2880,
+      "t1_ms": 3200,
+      "seg_index": 0,
+      "word_index": 7
+    },
+    {
+      "text": " don",
+      "id": 1729,
+      "p": 0.9997550249099731,
+      "t0_ms": 3200,
+      "t1_ms": 3360,
+      "seg_index": 0,
+      "word_index": 8
+    },
+    {
+      "text": "'",
+      "id": 7931,
+      "p": 0.9999960660934448,
+      "t0_ms": 3360,
+      "t1_ms": 3520,
+      "seg_index": 0,
+      "word_index": 8
+    },
+    {
+      "text": "t",
+      "id": 7868,
+      "p": 0.9999991655349731,
+      "t0_ms": 3520,
+      "t1_ms": 3760,
+      "seg_index": 0,
+      "word_index": 8
+    },
+    {
+      "text": " like",
+      "id": 2656,
+      "p": 0.999999463558197,
+      "t0_ms": 3760,
+      "t1_ms": 4080,
+      "seg_index": 0,
+      "word_index": 9
+    },
+    {
+      "text": " it",
+      "id": 869,
+      "p": 1.0,
+      "t0_ms": 4080,
+      "t1_ms": 4320,
+      "seg_index": 0,
+      "word_index": 10
+    },
+    {
+      "text": ".",
+      "id": 7883,
+      "p": 0.9987596869468689,
+      "t0_ms": 4320,
+      "t1_ms": 4560,
+      "seg_index": 0,
+      "word_index": 10
+    },
+    {
+      "text": " Th",
+      "id": 2210,
+      "p": 0.9999880790710449,
+      "t0_ms": 4560,
+      "t1_ms": 4720,
+      "seg_index": 0,
+      "word_index": 11
+    },
+    {
+      "text": "ere",
+      "id": 501,
+      "p": 0.999999463558197,
+      "t0_ms": 4720,
+      "t1_ms": 4960,
+      "seg_index": 0,
+      "word_index": 11
+    },
+    {
+      "text": " is",
+      "id": 508,
+      "p": 0.9997784495353699,
+      "t0_ms": 4960,
+      "t1_ms": 5200,
+      "seg_index": 0,
+      "word_index": 12
+    },
+    {
+      "text": " man",
+      "id": 698,
+      "p": 1.0,
+      "t0_ms": 5200,
+      "t1_ms": 5360,
+      "seg_index": 0,
+      "word_index": 13
+    },
+    {
+      "text": "y",
+      "id": 7893,
+      "p": 1.0,
+      "t0_ms": 5360,
+      "t1_ms": 5600,
+      "seg_index": 0,
+      "word_index": 13
+    },
+    {
+      "text": " people",
+      "id": 4954,
+      "p": 1.0,
+      "t0_ms": 5600,
+      "t1_ms": 5840,
+      "seg_index": 0,
+      "word_index": 14
+    },
+    {
+      "text": " in",
+      "id": 334,
+      "p": 0.9994804263114929,
+      "t0_ms": 5840,
+      "t1_ms": 6000,
+      "seg_index": 0,
+      "word_index": 15
+    },
+    {
+      "text": " the",
+      "id": 506,
+      "p": 0.9649325609207153,
+      "t0_ms": 6000,
+      "t1_ms": 6160,
+      "seg_index": 0,
+      "word_index": 16
+    },
+    {
+      "text": " the",
+      "id": 506,
+      "p": 0.9627472162246704,
+      "t0_ms": 6160,
+      "t1_ms": 6400,
+      "seg_index": 0,
+      "word_index": 17
+    },
+    {
+      "text": " ro",
+      "id": 603,
+      "p": 0.9999990463256836,
+      "t0_ms": 6400,
+      "t1_ms": 6640,
+      "seg_index": 0,
+      "word_index": 18
+    },
+    {
+      "text": "om",
+      "id": 313,
+      "p": 1.0,
+      "t0_ms": 6640,
+      "t1_ms": 6800,
+      "seg_index": 0,
+      "word_index": 18
+    },
+    {
+      "text": ".",
+      "id": 7883,
+      "p": 0.9870048761367798,
+      "t0_ms": 6800,
+      "t1_ms": 7040,
+      "seg_index": 0,
+      "word_index": 18
+    },
+    {
+      "text": " I",
+      "id": 380,
+      "p": 0.9979248642921448,
+      "t0_ms": 7040,
+      "t1_ms": 7200,
+      "seg_index": 0,
+      "word_index": 19
+    },
+    {
+      "text": " am",
+      "id": 692,
+      "p": 0.8900861144065857,
+      "t0_ms": 7200,
+      "t1_ms": 7360,
+      "seg_index": 0,
+      "word_index": 20
+    },
+    {
+      "text": " ag",
+      "id": 1637,
+      "p": 0.999995768070221,
+      "t0_ms": 7520,
+      "t1_ms": 7680,
+      "seg_index": 0,
+      "word_index": 21
+    },
+    {
+      "text": "ree",
+      "id": 4258,
+      "p": 0.999925971031189,
+      "t0_ms": 7680,
+      "t1_ms": 7920,
+      "seg_index": 0,
+      "word_index": 21
+    },
+    {
+      "text": " with",
+      "id": 1868,
+      "p": 1.0,
+      "t0_ms": 7920,
+      "t1_ms": 8160,
+      "seg_index": 0,
+      "word_index": 22
+    },
+    {
+      "text": " you",
+      "id": 1180,
+      "p": 0.9999999403953552,
+      "t0_ms": 8160,
+      "t1_ms": 8480,
+      "seg_index": 0,
+      "word_index": 23
+    },
+    {
+      "text": ".",
+      "id": 7883,
+      "p": 0.9920514822006226,
+      "t0_ms": 8480,
+      "t1_ms": 8560,
+      "seg_index": 0,
+      "word_index": 23
+    }
+  ]
+}

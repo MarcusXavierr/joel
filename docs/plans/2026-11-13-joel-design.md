@@ -88,6 +88,8 @@ class Transcript(BaseModel):
 
 Measured on 2026-11-13 on this machine: Parakeet Ultra through `transcribe-cpp` 0.4.2 (wheel ships the native lib, Vulkan backend on the Intel Xe) transcribed 8.0 s of audio in 1.38 s and preserved "he go", "she don't", "there is many", "I am agree", "uh", and "the the". The audio was synthetic (`espeak-ng`), so this proves nothing about real accented speech; the bench does.
 
+The speaking rate of a synthetic clip matters. At `espeak-ng`'s default rate (175 words per minute, 6.3 s), Parakeet wrote "I agree" and dropped the repeated "the". At `-s 130` (8.7 s) it kept every mistake, so the committed test recording, `tests/fixtures/audio/acceptance.wav`, uses 130.
+
 The two cloud models got the same sentence on 2026-11-13 (one 9 s `espeak-ng` clip, so plumbing only). `scribe_v3` kept all four grammar mistakes, "uh", and "the, the", with word timestamps and a non-zero `logprob` on every word. `gpt-transcribe` kept the four mistakes and "uh", collapsed "the the" into "the", and heard "Yesterday" as "Yes, today". A prompt asking for a literal transcript didn't bring "the the" back, so the adapter sends no prompt. `gpt-transcribe` returns no word list: the adapter splits `text` on whitespace and maps token logprobs to words by character offset.
 
 **Long audio.** Joel doesn't chunk audio itself in stage 1. Parakeet Ultra already does it internally: above 30 s, its voice-activity head cuts at the midpoint of a pause into segments of at most 30 s, decodes each independently, and stitches the text ([transcribe.cpp docs](https://github.com/handy-computer/transcribe.cpp/blob/main/docs/models/parakeet-ultra.md)). That is the same plan Handy applies (`chunking.rs`: pause cuts near 30 s, hard cap 40 s), and Handy skips its own chunker for models that report `long_form`, which Parakeet Ultra does. Cloud providers take whole files.
@@ -201,6 +203,7 @@ Output: a table per transcriber plus the diff of every file that diverges. No LL
 | --- | --- | --- |
 | `transcribe-cpp` | 0.4.2 | Local Parakeet Ultra |
 | `huggingface_hub` | 1.18.0 | Resolve or download the GGUF through the standard Hugging Face cache |
+| `httpx` | 0.28.1 | Comes with `huggingface_hub`; declared because model resolution catches its network errors |
 | `errant` | 3.0.2 | Typed diff |
 | `spacy` + `en_core_web_sm` | 3.8.18 / 3.8.0 | Required by ERRANT |
 | `pydantic-ai-slim[...]` with every text-model provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any of those providers |
