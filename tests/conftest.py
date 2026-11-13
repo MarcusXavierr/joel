@@ -55,6 +55,17 @@ def fake_ffmpeg(
     return install
 
 
+def user_prompt(messages: list[ModelMessage]) -> str:
+    """The user prompt text in a model call's messages."""
+    return "\n".join(
+        str(part.content)
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    )
+
+
 class ScriptedModel:
     """A model that gives canned structured answers, one per call, in order.
 
@@ -76,13 +87,7 @@ class ScriptedModel:
 
     def prompt(self, call: int = 0) -> str:
         """The user prompt text the model received on the given call."""
-        return "\n".join(
-            str(part.content)
-            for message in self.calls[call]
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-        )
+        return user_prompt(self.calls[call])
 
 
 @pytest.fixture
