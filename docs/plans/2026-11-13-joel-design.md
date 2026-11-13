@@ -90,7 +90,7 @@ Measured on 2026-11-13 on this machine: Parakeet Ultra through `transcribe-cpp` 
 
 The speaking rate of a synthetic clip matters. At `espeak-ng`'s default rate (175 words per minute, 6.3 s), Parakeet wrote "I agree" and dropped the repeated "the". At `-s 130` (8.7 s) it kept every mistake, so the committed test recording, `tests/fixtures/audio/acceptance.wav`, uses 130.
 
-The two cloud models got the same sentence on 2026-11-13 (one 9 s `espeak-ng` clip, so plumbing only). `scribe_v3` kept all four grammar mistakes, "uh", and "the, the", with word timestamps and a non-zero `logprob` on every word. `gpt-transcribe` kept the four mistakes and "uh", collapsed "the the" into "the", and heard "Yesterday" as "Yes, today". A prompt asking for a literal transcript didn't bring "the the" back, so the adapter sends no prompt. `gpt-transcribe` returns no word list: the adapter splits `text` on whitespace and maps token logprobs to words by character offset.
+The two cloud models got the same sentence on 2026-11-13 (one 9 s `espeak-ng` clip, so plumbing only). `scribe_v3` kept all four grammar mistakes, "uh", and "the, the", with word timestamps and a non-zero `logprob` on every word. `gpt-transcribe` kept the four mistakes and "uh", collapsed "the the" into "the", and heard "Yesterday" as "Yes, today". A second run on the same clip, the one saved in `tests/fixtures/openai_response.json`, heard "Yesterday" correctly and still collapsed "the the", so the mishearing varies from run to run. A prompt asking for a literal transcript didn't bring "the the" back, so the adapter sends no prompt. `gpt-transcribe` returns no word list: the adapter splits `text` on whitespace and maps token logprobs to words by character offset.
 
 **Long audio.** Joel doesn't chunk audio itself in stage 1. Parakeet Ultra already does it internally: above 30 s, its voice-activity head cuts at the midpoint of a pause into segments of at most 30 s, decodes each independently, and stitches the text ([transcribe.cpp docs](https://github.com/handy-computer/transcribe.cpp/blob/main/docs/models/parakeet-ultra.md)). That is the same plan Handy applies (`chunking.rs`: pause cuts near 30 s, hard cap 40 s), and Handy skips its own chunker for models that report `long_form`, which Parakeet Ultra does. Cloud providers take whole files.
 
@@ -123,7 +123,7 @@ Cloud SDKs are optional dependencies (`joel[elevenlabs]`, `joel[openai]`).
 
 ### 2. `split_sentences`
 
-Splits the transcript into sentences on terminal punctuation (`.`, `?`, `!`) attached to `Word.text`. All three transcribers return punctuated text. Output: a list of sentences, each a list of `Word.index`.
+Splits the transcript into sentences on terminal punctuation (`.`, `?`, `!`) attached to `Word.text`. All three transcribers return punctuated text. A closing quote or bracket after the mark still ends the sentence (`it."`). Words after the last mark form one more sentence, so no word is lost. Output: a list of sentences, each a list of `Word.index`.
 
 ### 3. `strip_disfluencies` (LLM)
 
@@ -153,15 +153,21 @@ The minimal-edit instruction is the core of the prompt: LLMs tend to rewrite the
 ### 5. `diff_edits` (ERRANT)
 
 - **Grammar mistakes**: ERRANT between the clean sentence and `grammatical`.
-- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits whose original span overlaps a grammar mistake.
+- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits that overlap a grammar mistake. `natural` is written on top of `grammatical`, so its diff repeats every grammar edit, and this rule is what removes the repeats. Two edits overlap when they touch the same `Word.index`, the way "do" and "n't" are one spoken word. When either edit is an insertion, they overlap when their token spans touch, which also drops an insertion right next to a grammar mistake. A few real naturalness edits get lost that way; precision comes first.
 
 The clean sentence goes into ERRANT as text and **is tokenized by spaCy** (`tokenise=True`). Each spaCy token maps back to a `Word.index` by character offset (`token.idx`) in the string built from the words. Measured on 2026-11-13: with whitespace tokenization, "don't → doesn't" comes out as `R:PUNCT`; with spaCy ("do" + "n't") it comes out as `do → does R:VERB:SVA`, which is correct.
 
-Output per edit: span in `Word.index`, original text, correction, ERRANT type, category (`grammar` or `naturalness`).
+Edits a listener can't hear are dropped from both lists. The step compares the original and the correction by ear: it ignores case, punctuation, apostrophes and spacing, reads digits, `&` and `%` as words, and treats a short list of homophones as one word (your/you're, their/there/they're, whose/who's, to/too/two, ok/okay). A missing final period, "i → I", "Its → It's", "alot → a lot", "2 → two" and "Your → You're" all go. ERRANT sometimes splits one of these into two edits ("Your → You" plus an inserted "'re"), so a run of adjacent edits that sound the same together goes too. The transcriber chose those spellings, not the speaker, so these edits would be about the ASR. They never reach the report, `--show-uncertain` included.
+
+ERRANT also merges a silent token into the real change next to it: "He go" against "He goes." comes out as `go → goes.` typed `R:OTHER`. So each edit first loses the silent tokens at its edges (punctuation, or a token that sounds like the one across from it), and ERRANT reclassifies what's left, which gives `go → goes R:VERB:SVA`.
+
+Known limits: pairs that only sound alike in some accents, like then/than, still count as mistakes, and so do ordinals and decimals ("1st → first", "3.5 → 3.50"). The comparison also costs a little recall, since "were → we're" has the same letters and is dropped.
+
+Output per edit: span in `Word.index`, original text, correction, ERRANT type, category (`grammar` or `naturalness`). An insertion has no original words, so its span is the word on each side of it, or the only neighbor at the start or end of a sentence.
 
 ### 6. `filter_edits`
 
-Edit confidence = minimum confidence of the original words in the span. Below `--min-confidence`, the edit is dropped from the report (probably an ASR error) and only appears with `--show-uncertain`, marked. A pure insertion (empty span) uses the neighboring words. Words with `confidence = None` don't filter; the report notes that the transcriber provides no confidence.
+Edit confidence = minimum confidence of the original words in the span; for an insertion, those are its neighbors (step 5). An edit whose confidence is strictly below `--min-confidence` is dropped from the report (probably an ASR error) and only appears with `--show-uncertain`, marked with the least confident word and its score. An edit exactly at the threshold stays. Words with `confidence = None` don't filter; the report notes that the transcriber provides no confidence.
 
 ### 7. `render`
 
@@ -278,4 +284,5 @@ Smaller choices, reversible in an afternoon:
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
+| Inaudible edits (punctuation, case, apostrophes, spacing, common homophones, digits against number words) dropped in `diff_edits`, not marked uncertain | The transcriber wrote them, not the speaker, so no threshold makes them worth showing |
 | Mistakes marked with [brackets] in bench `.txt` files | Lets the bench count mistakes kept automatically instead of me reading every diff |

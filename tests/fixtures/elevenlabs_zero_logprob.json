@@ -1,0 +1,12 @@
+{
+  "language_code": "eng",
+  "language_probability": 1.0,
+  "text": "I go (laughter)",
+  "words": [
+    {"text": "I", "start": 0.1, "end": 0.3, "type": "word", "logprob": 0.0},
+    {"text": " ", "start": 0.3, "end": 0.4, "type": "spacing", "logprob": -0.5},
+    {"text": "go", "start": 0.4, "end": 0.7, "type": "word", "logprob": 0.0},
+    {"text": " ", "start": 0.7, "end": 0.8, "type": "spacing", "logprob": -0.5},
+    {"text": "(laughter)", "start": 0.8, "end": 1.5, "type": "audio_event", "logprob": 0.0}
+  ]
+}

@@ -129,7 +129,7 @@ A speech-to-text model can quietly fix your grammar while transcribing, turning 
 Yesterday he [go] to school, uh, and she [don't] like it.
 ```
 
-For each transcriber you get a table with the word error rate and how many of your bracketed mistakes came through untouched, then a line for every file where the transcript differs from what you said, like `01  yesterday he [go → went] to school`. Only `parakeet` is built so far; any other name shows an error in place of its table.
+For each transcriber you get a table with the word error rate and how many of your bracketed mistakes came through untouched, then a line for every file where the transcript differs from what you said, like `01  yesterday he [go → went] to school`. A transcriber that can't run here, such as a cloud one without its extra or its API key, shows an error in place of its table, and the others still run.
 
 ## Contributing
 
