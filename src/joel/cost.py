@@ -1,6 +1,7 @@
 """What the LLM steps cost: an estimate from audio length, and the price of tokens."""
 
 import math
+from collections import Counter
 from decimal import Decimal
 from typing import NamedTuple
 
@@ -34,20 +35,49 @@ class PriceUnavailableError(Exception):
     """genai-prices can't price the model, or the model string has no provider."""
 
 
-def price(model: str, input_tokens: int, output_tokens: int) -> Decimal:
-    """Price tokens for a Pydantic AI model string, in US dollars."""
+def price(
+    model: str, input_tokens: int, output_tokens: int, *, requests: int
+) -> Decimal:
+    """Price tokens spent over a number of model calls, in US dollars.
+
+    The tokens are priced as if spread evenly over the calls. Some models charge
+    more per token once a single request passes a size threshold: a whole run
+    priced as one request would cross it, while Joel's sentence-sized calls
+    never do. Zero calls cost nothing.
+    """
     provider, sep, name = model.partition(":")
     if not sep:
         raise PriceUnavailableError(
             f"'{model}' is not a Pydantic AI model string such as "
             "'anthropic:claude-opus-5-5'."
         )
-    usage = genai_prices.Usage(input_tokens=input_tokens, output_tokens=output_tokens)
+    calls = Counter(
+        (_share(input_tokens, requests, call), _share(output_tokens, requests, call))
+        for call in range(requests)
+    )
     try:
-        return genai_prices.calc_price(usage, name, provider_id=provider).total_price
+        return sum(
+            (
+                count
+                * genai_prices.calc_price(
+                    genai_prices.Usage(
+                        input_tokens=call_input, output_tokens=call_output
+                    ),
+                    name,
+                    provider_id=provider,
+                ).total_price
+                for (call_input, call_output), count in calls.items()
+            ),
+            Decimal(0),
+        )
     except LookupError as exc:
         message = f"genai-prices has no price for '{model}'."
         raise PriceUnavailableError(message) from exc
+
+
+def _share(tokens: int, requests: int, call: int) -> int:
+    """The tokens of one call when `tokens` are spread evenly over `requests` calls."""
+    return tokens // requests + (call < tokens % requests)
 
 
 class CostEstimate(BaseModel):
@@ -77,13 +107,14 @@ def estimate_cost(audio_seconds: float, model: str = DEFAULT_MODEL) -> CostEstim
     output_tokens = sentences * (
         _per_sentence(CLEANUP_OUTPUT) + _per_sentence(CORRECT_OUTPUT)
     )
+    calls = 2 * sentences  # one cleanup and one correction per sentence
     return CostEstimate(
         model=model,
         audio_seconds=audio_seconds,
         words=words,
         sentences=sentences,
-        calls=2 * sentences,  # one cleanup and one correction per sentence
+        calls=calls,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        usd=price(model, input_tokens, output_tokens),
+        usd=price(model, input_tokens, output_tokens, requests=calls),
     )
