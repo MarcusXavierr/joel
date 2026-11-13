@@ -45,7 +45,7 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
 | `--json` | off | Prints the full result as JSON to stdout |
 
-`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the report says so. `joel check` prices the tokens a run actually used with the same function.
+`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the estimate's last line says so. `joel check` will price the tokens its calls actually used with the same function (see `render`).
 
 ## Pipeline
 
@@ -184,7 +184,9 @@ Terminal:
 
 When the transcriber gives no timestamps (`openai`), the time column is left out and the report says so once at the top.
 
-`--json`: raw transcript, sentences, dropped indices, LLM corrections, and every edit, including filtered ones with the reason.
+The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included.
+
+`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's input and output tokens, and its cost in US dollars.
 
 ## `joel bench`
 
