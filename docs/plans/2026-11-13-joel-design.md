@@ -200,12 +200,12 @@ Output: a table per transcriber plus the diff of every file that diverges. No LL
 | Package | Verified version | Purpose |
 | --- | --- | --- |
 | `transcribe-cpp` | 0.4.2 | Local Parakeet Ultra |
-| `huggingface_hub` | not pinned yet | Resolve or download the GGUF through the standard Hugging Face cache |
+| `huggingface_hub` | 1.18.0 | Resolve or download the GGUF through the standard Hugging Face cache |
 | `errant` | 3.0.2 | Typed diff |
 | `spacy` + `en_core_web_sm` | 3.8.18 / 3.8.0 | Required by ERRANT |
-| `pydantic-ai-slim[anthropic]` | 2.68.0 | Steps 3 and 4, typed output |
-| `elevenlabs` (optional) | not pinned yet | Cloud transcriber |
-| `openai` (optional) | not pinned yet | Cloud transcriber |
+| `pydantic-ai-slim[...]` with every model-provider extra | 2.68.0 | Steps 3 and 4, typed output; `--model` can name any provider |
+| `elevenlabs` (optional) | 2.78.0 | Cloud transcriber |
+| `openai` (optional) | 3.50.0 | Cloud transcriber |
 | `ffmpeg` | system | Decode |
 
 All installed and exercised on Python 3.13 on 2026-11-13. CLI built on stdlib `argparse`. Pydantic AI is used only for the two LLM calls, with no agents and no tools.
