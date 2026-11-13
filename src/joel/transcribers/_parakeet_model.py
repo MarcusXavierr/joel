@@ -61,7 +61,9 @@ def resolve_model(cache_dir: Path | None = None) -> Path:
                 cache_dir=cache,
             )
         )
-    except (LocalEntryNotFoundError, HfHubHTTPError) as exc:
+    # RuntimeError: with no network and HF_HUB_OFFLINE unset, huggingface_hub
+    # 1.18 retries on a client it has already closed and fails with one.
+    except (LocalEntryNotFoundError, HfHubHTTPError, RuntimeError) as exc:
         raise ModelUnavailableError(
             f"Could not get the Parakeet Ultra model. Joel needs {PARAKEET_FILE} "
             f"({PARAKEET_SIZE_BYTES / 1_000_000:.0f} MB) from the Hugging Face "

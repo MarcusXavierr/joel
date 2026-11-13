@@ -1,4 +1,5 @@
 import inspect
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ import huggingface_hub
 import huggingface_hub.constants
 import pytest
 from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub.utils import _http
 
 from joel.transcribers import TranscriberUnavailableError, _parakeet_model
 from joel.transcribers._parakeet_model import (
@@ -31,6 +33,22 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def cache(tmp_path: Path) -> Path:
     return tmp_path / "hub"
+
+
+@pytest.fixture
+def unreachable_hub(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """No network at all, as on a laptop without Wi-Fi, and HF_HUB_OFFLINE unset."""
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host", request=request)
+
+    monkeypatch.setattr(huggingface_hub.constants, "HF_HUB_OFFLINE", False)
+    monkeypatch.setattr("huggingface_hub.utils._http.time.sleep", lambda _: None)
+    huggingface_hub.set_client_factory(
+        lambda: httpx.Client(transport=httpx.MockTransport(refuse))
+    )
+    yield
+    huggingface_hub.set_client_factory(_http.default_client_factory)
 
 
 def _cache_file(cache: Path, revision: str, blob_name: str) -> Path:
@@ -124,3 +142,16 @@ def test_hub_error_while_downloading_explains_what_is_missing(
     assert PARAKEET_REPO in message
     assert PARAKEET_REVISION in message
     assert "500 Server Error" in message
+
+
+@pytest.mark.usefixtures("unreachable_hub")
+def test_no_network_without_the_offline_flag_explains_what_is_missing(
+    cache: Path,
+) -> None:
+    with pytest.raises(ModelUnavailableError) as excinfo:
+        resolve_model(cache)
+
+    message = str(excinfo.value)
+    assert PARAKEET_REPO in message
+    assert PARAKEET_FILE in message
+    assert str(cache) in message
