@@ -18,6 +18,9 @@ def decode(audio: Path) -> bytes:
         "-hide_banner",
         "-loglevel",
         "error",
+        # Stop on a damaged stretch instead of skipping it: skipped audio would
+        # shift every later timestamp and splice words across the gap.
+        "-xerror",
         "-i",
         # Absolute, so a file name that starts with "-" isn't read as an option.
         str(audio.absolute()),
