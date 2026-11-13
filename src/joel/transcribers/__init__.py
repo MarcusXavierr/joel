@@ -26,7 +26,12 @@ class Transcriber(Protocol):
 
 
 class TranscriberUnavailableError(Exception):
-    """A transcriber name that can't be turned into a working adapter."""
+    """A transcriber that can't run here.
+
+    load_transcriber raises it for an unknown name or a missing optional extra.
+    An adapter's transcribe() may raise a subclass for something only found at
+    run time, such as a model that is neither cached nor downloadable.
+    """
 
 
 def transcriber_names(package: str = __name__) -> list[str]:
