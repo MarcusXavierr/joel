@@ -1,7 +1,6 @@
 """The whole pipeline: a recording in; every mistake and what finding it cost out."""
 
 import asyncio
-from collections.abc import Awaitable
 from decimal import Decimal
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from pydantic_ai.usage import RunUsage
 from joel.confidence import FilteredEdit, filter_edits
 from joel.correct import Correction, correct
 from joel.cost import PriceUnavailableError, price
-from joel.disfluencies import strip_disfluencies
+from joel.disfluencies import CleanSentence, strip_disfluencies
 from joel.edits import diff_edits
 from joel.sentences import split_sentences
 from joel.transcribers import Transcriber
@@ -64,36 +63,29 @@ async def run_check(
     usage = RunUsage()
     limit = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
 
-    async def limited[T](call: Awaitable[T]) -> T:
+    # Each call is created only once it holds the semaphore, so a call still
+    # queued when another fails is cancelled cleanly instead of never awaited.
+    async def cleanup(sentence: list[int]) -> CleanSentence:
         async with limit:
-            return await call
-
-    cleaned = await asyncio.gather(
-        *(
-            limited(
-                strip_disfluencies(
-                    [by_index[i] for i in sentence], model=model, usage=usage
-                )
+            return await strip_disfluencies(
+                [by_index[i] for i in sentence], model=model, usage=usage
             )
-            for sentence in sentences
-        )
-    )
+
+    cleaned = await asyncio.gather(*(cleanup(sentence) for sentence in sentences))
     texts = [" ".join(w.text for w in c.words) for c in cleaned]
     spoken = [n for n, text in enumerate(texts) if text]
-    answers = await asyncio.gather(
-        *(
-            limited(
-                correct(
-                    texts[n],
-                    previous=texts[spoken[k - 1]] if k > 0 else None,
-                    following=texts[spoken[k + 1]] if k + 1 < len(spoken) else None,
-                    model=model,
-                    usage=usage,
-                )
+
+    async def fix(k: int) -> Correction:
+        async with limit:
+            return await correct(
+                texts[spoken[k]],
+                previous=texts[spoken[k - 1]] if k > 0 else None,
+                following=texts[spoken[k + 1]] if k + 1 < len(spoken) else None,
+                model=model,
+                usage=usage,
             )
-            for k, n in enumerate(spoken)
-        )
-    )
+
+    answers = await asyncio.gather(*(fix(k) for k in range(len(spoken))))
     corrections = dict(zip(spoken, answers, strict=True))
 
     checked = []

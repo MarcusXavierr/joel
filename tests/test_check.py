@@ -1,7 +1,9 @@
 """The whole pipeline, from a transcript to every kept mistake and its cost."""
 
 import asyncio
+import gc
 import json
+import warnings
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
@@ -198,6 +200,15 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
 
 
 @pytest.mark.anyio
+async def test_a_long_recording_gets_every_call_it_needs(annotator: Annotator) -> None:
+    words = unscored(*["He go home."] * 30)  # past pydantic-ai's 50-request default
+
+    result = await check(FakeTranscriber("local", words), PipelineModel(), annotator)
+
+    assert result.requests == 60
+
+
+@pytest.mark.anyio
 async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> None:
     answers = PipelineModel()
     in_flight = peak = 0
@@ -306,16 +317,25 @@ def test_a_failing_model_call_is_an_error(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cli_pipeline(spoken_words())
+    # More sentences than calls in flight, so some calls are still queued.
+    cli_pipeline(unscored(*["He go home."] * 20))
     monkeypatch.setattr("joel.cli.infer_model", lambda name: FunctionModel(respond))
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
 
-    assert main(["check", str(audio)]) == 1
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert main(["check", str(audio)]) == 1
+        gc.collect()  # a queued call that never ran warns when collected
+
     out, err = capsys.readouterr()
     assert out == ""
     assert err.startswith("joel: error: ")
     assert message in err
+    # A cancelled pydantic-ai run may leave its own internals unawaited; that
+    # never reaches stderr. A queued call of joel's must not be left at all.
+    leaked = [str(w.message) for w in caught]
+    assert not any("'strip_disfluencies'" in m or "'correct'" in m for m in leaked)
 
 
 def test_audio_ffmpeg_cannot_read_is_an_error(
