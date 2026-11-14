@@ -150,8 +150,12 @@ async def check(
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("block_sentences", "requests"),
-    [(BLOCK_SENTENCES, 2), (1, 6)],
-    ids=["one block per step", "one sentence per call"],
+    [(BLOCK_SENTENCES, 2), (2, 4), (1, 6)],
+    ids=[
+        "one block per step",
+        "a full block then a partial one",
+        "one sentence per call",
+    ],
 )
 async def test_finds_the_known_mistakes_and_not_the_disfluencies(
     annotator: Annotator, block_sentences: int, requests: int
@@ -224,6 +228,27 @@ async def test_a_sentence_left_empty_is_not_corrected_or_used_as_context(
     assert corrections == [
         "Previous sentence: He go home.\nSentences to correct:\n1. She go out.",
         "Sentences to correct:\n1. He go home.\nNext sentence: She go out.",
+    ]
+
+
+@pytest.mark.anyio
+async def test_each_block_reads_the_sentences_around_it_as_context(
+    annotator: Annotator,
+) -> None:
+    words = unscored(
+        "He go home.", "She go out.", "We go in.", "They go up.", "I go down."
+    )
+    model = PipelineModel()
+
+    await check(FakeTranscriber("local", words), model, annotator, block_sentences=2)
+
+    corrections = sorted(p for p in model.prompts if "Sentences to correct" in p)
+    assert corrections == [
+        "Previous sentence: She go out.\nSentences to correct:\n"
+        "1. We go in.\n2. They go up.\nNext sentence: I go down.",
+        "Previous sentence: They go up.\nSentences to correct:\n1. I go down.",
+        "Sentences to correct:\n1. He go home.\n2. She go out.\n"
+        "Next sentence: We go in.",
     ]
 
 

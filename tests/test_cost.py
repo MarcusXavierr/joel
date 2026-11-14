@@ -22,6 +22,19 @@ def test_tokens_read_from_the_cache_cost_less() -> None:
     assert price(model, 1_000_000, 0, requests=1) == Decimal(4)
 
 
+def test_tokens_written_to_the_cache_cost_more_however_the_calls_split_them() -> None:
+    # Opus 5.5 writes to its 5-minute cache at $5 per million, against $4 uncached.
+    written = price(
+        "anthropic:claude-opus-5-5",
+        1_000_000,
+        0,
+        requests=3,
+        cache_write_tokens=1_000_000,
+    )
+
+    assert written == Decimal(5)
+
+
 def test_many_small_requests_never_reach_a_long_context_price() -> None:
     # Sonnet 4.5 charges more per token once one request passes 200k input
     # tokens. A run's 300k tokens are spread over many short requests.

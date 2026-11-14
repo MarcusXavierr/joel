@@ -243,6 +243,11 @@ def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:
             "Cost: under $0.001 for 1 model call (100 input and 10 output tokens)",
         ),
         (
+            Decimal("0.001"),
+            1,
+            "Cost: $0.001 for 1 model call (100 input and 10 output tokens)",
+        ),
+        (
             Decimal("0.0041"),
             1,
             "Cost: $0.004 for 1 model call (100 input and 10 output tokens)",

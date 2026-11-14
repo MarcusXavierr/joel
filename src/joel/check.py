@@ -99,13 +99,16 @@ async def run_check(
     texts = [" ".join(w.text for w in c.words) for c in cleaned]
     spoken = [n for n, text in enumerate(texts) if text]
 
-    async def fix(ks: tuple[int, ...]) -> list[Correction]:
+    # A block is the positions of its sentences among the spoken ones.
+    async def fix(block: tuple[int, ...]) -> list[Correction]:
         async with limit:
             return await correct(
-                [texts[spoken[k]] for k in ks],
-                previous=texts[spoken[ks[0] - 1]] if ks[0] > 0 else None,
+                [texts[spoken[k]] for k in block],
+                previous=texts[spoken[block[0] - 1]] if block[0] > 0 else None,
                 following=(
-                    texts[spoken[ks[-1] + 1]] if ks[-1] + 1 < len(spoken) else None
+                    texts[spoken[block[-1] + 1]]
+                    if block[-1] + 1 < len(spoken)
+                    else None
                 ),
                 model=model,
                 usage=usage,
@@ -114,8 +117,8 @@ async def run_check(
     positions = range(len(spoken))
     answers = await _first_alone(
         [
-            functools.partial(fix, ks)
-            for ks in itertools.batched(positions, block_sentences, strict=False)
+            functools.partial(fix, block)
+            for block in itertools.batched(positions, block_sentences, strict=False)
         ]
     )
     corrections = dict(
