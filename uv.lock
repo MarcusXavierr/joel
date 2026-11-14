@@ -1294,10 +1294,9 @@ wheels = [
 
 [[package]]
 name = "joel"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "en-core-web-sm" },
     { name = "errant" },
     { name = "genai-prices" },
     { name = "httpx" },
@@ -1319,6 +1318,7 @@ openai = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "en-core-web-sm" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1327,7 +1327,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "elevenlabs", marker = "extra == 'elevenlabs'", specifier = ">=2.78.0" },
-    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "errant", specifier = ">=3.0.2" },
     { name = "genai-prices", specifier = ">=0.2.3" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1343,6 +1342,7 @@ provides-extras = ["elevenlabs", "openai"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
     { name = "mypy", specifier = ">=2.4.1" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "ruff", specifier = ">=0.17.5" },

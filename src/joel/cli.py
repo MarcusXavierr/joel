@@ -25,6 +25,7 @@ from joel.edits import load_annotator
 from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
 from joel.report import render
+from joel.spacy_model import SpacyModelUnavailableError
 from joel.transcribers import TranscriberUnavailableError, load_transcriber
 
 BYTES_PER_SAMPLE = 4  # float32
@@ -166,6 +167,7 @@ def _check(args: argparse.Namespace) -> int:
         DecodeError,
         ModelAnswerError,
         ModelAPIError,
+        SpacyModelUnavailableError,
     ) as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
