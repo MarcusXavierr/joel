@@ -11,6 +11,7 @@ from pathlib import Path
 from openai import OpenAI
 from openai.types.audio import Transcription
 
+from joel.transcribers import TranscriberUnavailableError
 from joel.transcribers._api_key import require_api_key
 from joel.transcript import Transcript, Word
 
@@ -21,7 +22,7 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 _LOGGER = logging.getLogger(__name__)
 
 
-class AudioTooLargeError(Exception):
+class AudioTooLargeError(TranscriberUnavailableError):
     """An audio file over gpt-transcribe's upload limit."""
 
 

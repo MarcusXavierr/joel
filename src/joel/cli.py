@@ -1,21 +1,31 @@
 """The ``joel`` command."""
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Callable, Sequence
-from decimal import Decimal
 from pathlib import Path
 
+import pydantic_ai
+from pydantic_ai.exceptions import ModelAPIError, UserError
+from pydantic_ai.models import infer_model
+
 from joel.bench import BenchInputError, load_recordings, render_run, run_bench
+from joel.check import run_check
+from joel.confidence import MIN_CONFIDENCE
 from joel.cost import (
     SPEAKING_RATE_WPM,
     WORDS_PER_SENTENCE,
     PriceUnavailableError,
+    dollars,
     estimate_cost,
 )
 from joel.decode import SAMPLE_RATE, DecodeError, decode
-from joel.llm import DEFAULT_MODEL
+from joel.edits import load_annotator
+from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
+from joel.report import render
+from joel.transcribers import TranscriberUnavailableError, load_transcriber
 
 BYTES_PER_SAMPLE = 4  # float32
 
@@ -29,6 +39,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
+
+    check = commands.add_parser(
+        "check",
+        help="Report every grammar mistake in a recording, with when you said it.",
+    )
+    check.add_argument("audio", type=Path, help="recording in any format ffmpeg reads")
+    check.add_argument(
+        "--transcriber",
+        default="parakeet",
+        help="speech-to-text model: parakeet, elevenlabs or openai (default: parakeet)",
+    )
+    check.add_argument(
+        "--model", default=DEFAULT_MODEL, help="Pydantic AI model string"
+    )
+    check.add_argument(
+        "--min-confidence",
+        type=_probability,
+        default=MIN_CONFIDENCE,
+        metavar="P",
+        help="hide mistakes on words heard with less confidence than this "
+        f"(default: {MIN_CONFIDENCE})",
+    )
+    check.add_argument(
+        "--show-uncertain",
+        action="store_true",
+        help="also show the mistakes held back as uncertain",
+    )
+    check.add_argument(
+        "--json", action="store_true", help="print everything the run decided as JSON"
+    )
+    check.set_defaults(run=_check)
 
     bench = commands.add_parser(
         "bench", help="Measure which transcriber keeps your grammar mistakes."
@@ -59,10 +100,80 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     estimate.set_defaults(run=_estimate)
 
+    for command in (check, estimate):
+        command.add_argument(
+            "--block-sentences",
+            type=_positive_int,
+            default=BLOCK_SENTENCES,
+            metavar="N",
+            help=f"sentences per language model call (default: {BLOCK_SENTENCES})",
+        )
+
     args = parser.parse_args(argv)
+    # joel owns stdout and stderr; pydantic-ai's first-run banner would land in
+    # the report.
+    pydantic_ai.BANNER_ENABLED = False
     configure_logging()
     run: Callable[[argparse.Namespace], int] = args.run
     return run(args)
+
+
+def _probability(text: str) -> float:
+    try:
+        p: float | None = float(text)
+    except ValueError:
+        p = None
+    if p is None or not 0 <= p <= 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number between 0 and 1")
+    return p
+
+
+def _positive_int(text: str) -> int:
+    try:
+        n: int | None = int(text)
+    except ValueError:
+        n = None
+    if n is None or n < 1:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a whole number of at least 1"
+        )
+    return n
+
+
+def _check(args: argparse.Namespace) -> int:
+    audio: Path = args.audio
+    if not audio.is_file():
+        print(f"joel: error: {audio} is not a file.", file=sys.stderr)
+        return 1
+    try:
+        # infer_model fails here on a missing API key, before any transcription.
+        model = infer_model(args.model)
+        transcriber = load_transcriber(args.transcriber)
+        result = asyncio.run(
+            run_check(
+                audio,
+                transcriber,
+                model=model,
+                model_name=args.model,
+                min_confidence=args.min_confidence,
+                annotator=load_annotator(),
+                block_sentences=args.block_sentences,
+            )
+        )
+    except (
+        UserError,
+        TranscriberUnavailableError,
+        DecodeError,
+        ModelAnswerError,
+        ModelAPIError,
+    ) as exc:
+        print(f"joel: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(render(result, show_uncertain=args.show_uncertain))
+    return 0
 
 
 def _bench(args: argparse.Namespace) -> int:
@@ -87,12 +198,14 @@ def _estimate(args: argparse.Namespace) -> int:
     model: str = args.model
     try:
         seconds = len(decode(audio)) / (BYTES_PER_SAMPLE * SAMPLE_RATE)
-        cost = estimate_cost(seconds, model)
+        cost = estimate_cost(seconds, model, args.block_sentences)
     except (DecodeError, PriceUnavailableError) as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
     minutes, secs = divmod(round(seconds), 60)
-    money = "under $0.01" if cost.usd < Decimal("0.01") else f"about ${cost.usd:.2f}"
+    money = dollars(cost.usd)
+    if money.startswith("$"):
+        money = f"about {money}"
     print(
         f"{audio}: {minutes}:{secs:02d} of audio, "
         f"about {cost.words} words in {cost.sentences} sentences"
@@ -101,8 +214,10 @@ def _estimate(args: argparse.Namespace) -> int:
         f"{model}: {money} for {cost.calls} calls "
         f"({cost.input_tokens} input and {cost.output_tokens} output tokens)"
     )
+    per_call = "sentence" if args.block_sentences == 1 else "sentences"
     print(
-        f"Assumes {SPEAKING_RATE_WPM} words per minute and {WORDS_PER_SENTENCE} "
-        "words per sentence; a retried call costs extra."
+        f"Assumes {SPEAKING_RATE_WPM} words per minute, {WORDS_PER_SENTENCE} "
+        f"words per sentence and {args.block_sentences} {per_call} per call, "
+        "with no prompt caching; a retried call costs extra."
     )
     return 0
