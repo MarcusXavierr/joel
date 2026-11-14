@@ -8,14 +8,14 @@ from typing import NamedTuple
 import genai_prices
 from pydantic import BaseModel
 
-from joel.llm import DEFAULT_MODEL
+from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL
 
 SPEAKING_RATE_WPM = 150  # assumed; the CLI prints it with every estimate
 WORDS_PER_SENTENCE = 12  # assumed; the CLI prints it with every estimate
 
 
 class TokenRate(NamedTuple):
-    """Tokens per call for a sentence of n words: base + per_word * n."""
+    """Tokens per call for a block of n words: base + per_word * n."""
 
     base: int
     per_word: float
@@ -93,21 +93,22 @@ class CostEstimate(BaseModel):
     usd: Decimal
 
 
-def _per_sentence(rate: TokenRate) -> int:
-    return round(rate.base + rate.per_word * WORDS_PER_SENTENCE)
-
-
-def estimate_cost(audio_seconds: float, model: str = DEFAULT_MODEL) -> CostEstimate:
+def estimate_cost(
+    audio_seconds: float,
+    model: str = DEFAULT_MODEL,
+    block_sentences: int = BLOCK_SENTENCES,
+) -> CostEstimate:
     """Estimate the LLM cost from the audio's duration alone. Retries aren't counted."""
     words = math.ceil(audio_seconds / 60 * SPEAKING_RATE_WPM)
     sentences = math.ceil(words / WORDS_PER_SENTENCE)
-    input_tokens = sentences * (
-        _per_sentence(CLEANUP_INPUT) + _per_sentence(CORRECT_INPUT)
+    blocks = math.ceil(sentences / block_sentences)
+    input_tokens = blocks * (CLEANUP_INPUT.base + CORRECT_INPUT.base) + round(
+        words * (CLEANUP_INPUT.per_word + CORRECT_INPUT.per_word)
     )
-    output_tokens = sentences * (
-        _per_sentence(CLEANUP_OUTPUT) + _per_sentence(CORRECT_OUTPUT)
+    output_tokens = blocks * (CLEANUP_OUTPUT.base + CORRECT_OUTPUT.base) + round(
+        words * (CLEANUP_OUTPUT.per_word + CORRECT_OUTPUT.per_word)
     )
-    calls = 2 * sentences  # one cleanup and one correction per sentence
+    calls = 2 * blocks  # one cleanup and one correction per block
     return CostEstimate(
         model=model,
         audio_seconds=audio_seconds,

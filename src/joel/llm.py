@@ -6,6 +6,8 @@ from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 DEFAULT_MODEL = "anthropic:claude-opus-5-5"
+# Sentences per model call; joel check --block-sentences overrides it.
+BLOCK_SENTENCES = 6
 
 
 class ModelAnswerError(Exception):
@@ -19,7 +21,7 @@ async def ask[D, T](
     deps: D,
     model: Model | str,
     usage: RunUsage | None,
-    sentence: str,
+    text: str,
 ) -> T:
     """Run the agent (plus its one retry) and return its validated answer.
 
@@ -28,7 +30,7 @@ async def ask[D, T](
     try:
         # A run shares one usage across every call, so pydantic-ai's default cap
         # of 50 requests would end a long recording early. Each agent's own
-        # `retries` still bounds the calls one sentence can make.
+        # `retries` still bounds the calls one block can make.
         result = await agent.run(
             prompt,
             deps=deps,
@@ -38,7 +40,6 @@ async def ask[D, T](
         )
     except UnexpectedModelBehavior as exc:
         raise ModelAnswerError(
-            f"The model gave no valid answer for the sentence {sentence!r}, "
-            "even after a retry."
+            f"The model gave no valid answer for {text!r}, even after a retry."
         ) from exc
     return result.output

@@ -13,9 +13,10 @@ from joel.transcript import Word
 
 INSTRUCTIONS = (
     "You clean up transcribed speech from a non-native English speaker before a "
-    "grammar check. You receive one sentence as a JSON list of [position, word] "
-    "pairs. Answer with the positions of the words to drop. Drop only: filled "
-    "pauses (uh, um, er, erm, hmm, and the like); repetitions that add nothing, "
+    "grammar check. You receive a passage of one or more sentences as a JSON "
+    "list of [position, word] pairs. Answer with the positions of the words to "
+    "drop. Drop only: filled pauses (uh, um, er, erm, hmm, and the like); "
+    "repetitions that add nothing, "
     'such as the first "the" in "the the"; false starts, words the speaker '
     'abandoned and restarted, such as "I went," in "I went, I was going". Never '
     "drop a word because removing it makes the sentence grammatical. The speaker "
@@ -36,7 +37,7 @@ class _Drop(BaseModel):
     drop: list[int]
 
 
-# The deps are the positions the sentence holds.
+# The deps are the positions the passage holds.
 _agent = Agent(
     output_type=_Drop,
     deps_type=frozenset[int],
@@ -46,33 +47,33 @@ _agent = Agent(
 
 
 @_agent.output_validator
-def _only_sentence_positions(ctx: RunContext[frozenset[int]], answer: _Drop) -> _Drop:
+def _only_passage_positions(ctx: RunContext[frozenset[int]], answer: _Drop) -> _Drop:
     bad = sorted(set(answer.drop) - ctx.deps)
     if bad:
         raise ModelRetry(
-            f"Positions {bad} are not in the sentence. "
+            f"Positions {bad} are not in the passage. "
             f"Use only these positions: {sorted(ctx.deps)}."
         )
     return answer
 
 
 async def strip_disfluencies(
-    sentence: Sequence[Word],
+    passage: Sequence[Word],
     *,
     model: Model | str = DEFAULT_MODEL,
     usage: RunUsage | None = None,
 ) -> CleanSentence:
-    """Ask the model which words are disfluencies and return the rest."""
+    """Ask the model which words of a passage are disfluencies; return the rest."""
     answer = await ask(
         _agent,
-        json.dumps([[word.index, word.text] for word in sentence]),
-        deps=frozenset(word.index for word in sentence),
+        json.dumps([[word.index, word.text] for word in passage]),
+        deps=frozenset(word.index for word in passage),
         model=model,
         usage=usage,
-        sentence=" ".join(word.text for word in sentence),
+        text=" ".join(word.text for word in passage),
     )
     dropped = set(answer.drop)
     return CleanSentence(
-        words=[word for word in sentence if word.index not in dropped],
+        words=[word for word in passage if word.index not in dropped],
         dropped=sorted(dropped),
     )

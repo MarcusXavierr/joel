@@ -21,6 +21,7 @@ from pydantic_ai.usage import RequestUsage
 
 from joel.check import CheckResult, run_check
 from joel.cli import main
+from joel.llm import BLOCK_SENTENCES
 from joel.report import render
 from joel.transcribers.openai import AudioTooLargeError
 from joel.transcript import Transcript, Word
@@ -85,10 +86,23 @@ class PipelineModel:
         if "drop" in tool.parameters_json_schema["properties"]:
             answer = {"drop": _disfluencies(json.loads(prompt))}
         else:
-            sentence = prompt.split("Sentence to correct: ", 1)[1].split("\n", 1)[0]
-            for wrong, right in FIXES.items():
-                sentence = sentence.replace(wrong, right)
-            answer = {"grammatical": sentence, "natural": sentence}
+            block = prompt.split("Sentences to correct:\n", 1)[1].splitlines()
+            items = []
+            for line in block:
+                found = re.match(r"(\d+)\. (.*)", line)
+                if found is None:
+                    break
+                sentence = found[2]
+                for wrong, right in FIXES.items():
+                    sentence = sentence.replace(wrong, right)
+                items.append(
+                    {
+                        "number": int(found[1]),
+                        "grammatical": sentence,
+                        "natural": sentence,
+                    }
+                )
+            answer = {"sentences": items}
         return ModelResponse(
             parts=[ToolCallPart(tool.name, answer)],
             usage=RequestUsage(input_tokens=100, output_tokens=10),
@@ -113,6 +127,7 @@ async def check(
     model: PipelineModel,
     annotator: Annotator,
     min_confidence: float = 0.67,
+    block_sentences: int = BLOCK_SENTENCES,
 ) -> CheckResult:
     return await run_check(
         Path("talk.m4a"),
@@ -121,15 +136,24 @@ async def check(
         model_name=MODEL,
         min_confidence=min_confidence,
         annotator=annotator,
+        block_sentences=block_sentences,
     )
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("block_sentences", "requests"),
+    [(BLOCK_SENTENCES, 2), (1, 6)],
+    ids=["one block per step", "one sentence per call"],
+)
 async def test_finds_the_known_mistakes_and_not_the_disfluencies(
-    annotator: Annotator,
+    annotator: Annotator, block_sentences: int, requests: int
 ) -> None:
     result = await check(
-        FakeTranscriber("local", spoken_words()), PipelineModel(), annotator
+        FakeTranscriber("local", spoken_words()),
+        PipelineModel(),
+        annotator,
+        block_sentences=block_sentences,
     )
 
     assert [s.dropped for s in result.sentences] == [[5], [16], []]
@@ -144,7 +168,11 @@ async def test_finds_the_known_mistakes_and_not_the_disfluencies(
         ("grammar", "U:VERB:TENSE", "am", "", [20]),
     ]
     assert all(f.uncertain is None for f in edits)
-    assert (result.requests, result.input_tokens, result.output_tokens) == (6, 600, 60)
+    assert (result.requests, result.input_tokens, result.output_tokens) == (
+        requests,
+        100 * requests,
+        10 * requests,
+    )
     assert result.cost_usd is not None
 
 
@@ -177,16 +205,18 @@ async def test_a_sentence_left_empty_is_not_corrected_or_used_as_context(
     words = unscored("He", "go", "home.", "Uh.", "She", "go", "out.")
     model = PipelineModel()
 
-    result = await check(FakeTranscriber("local", words), model, annotator)
+    result = await check(
+        FakeTranscriber("local", words), model, annotator, block_sentences=1
+    )
 
     middle = result.sentences[1]
     assert middle.correction is None
     assert middle.edits == []
     assert result.requests == 5  # three cleanups, two corrections
-    corrections = sorted(p for p in model.prompts if "Sentence to correct" in p)
+    corrections = sorted(p for p in model.prompts if "Sentences to correct" in p)
     assert corrections == [
-        "Previous sentence: He go home.\nSentence to correct: She go out.",
-        "Sentence to correct: He go home.\nNext sentence: She go out.",
+        "Previous sentence: He go home.\nSentences to correct:\n1. She go out.",
+        "Sentences to correct:\n1. He go home.\nNext sentence: She go out.",
     ]
 
 
@@ -206,7 +236,9 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
 async def test_a_long_recording_gets_every_call_it_needs(annotator: Annotator) -> None:
     words = unscored(*["He go home."] * 30)  # past pydantic-ai's 50-request default
 
-    result = await check(FakeTranscriber("local", words), PipelineModel(), annotator)
+    result = await check(
+        FakeTranscriber("local", words), PipelineModel(), annotator, block_sentences=1
+    )
 
     assert result.requests == 60
 
@@ -233,6 +265,7 @@ async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> No
         model_name=MODEL,
         min_confidence=0.67,
         annotator=annotator,
+        block_sentences=1,
     )
 
     assert result.requests == 40
@@ -324,6 +357,16 @@ def _invalid_cleanup(messages: list[ModelMessage], info: AgentInfo) -> ModelResp
     )
 
 
+def _misnumbered_correction(
+    messages: list[ModelMessage], info: AgentInfo
+) -> ModelResponse:
+    tool = info.output_tools[0]
+    if "drop" in tool.parameters_json_schema["properties"]:
+        return ModelResponse(parts=[ToolCallPart(tool.name, {"drop": []})])
+    wrong = {"number": 2, "grammatical": "He went home.", "natural": "He went home."}
+    return ModelResponse(parts=[ToolCallPart(tool.name, {"sentences": [wrong]})])
+
+
 def _rejected_key(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     raise ModelHTTPError(401, "test", body={"error": "invalid x-api-key"})
 
@@ -331,7 +374,8 @@ def _rejected_key(messages: list[ModelMessage], info: AgentInfo) -> ModelRespons
 @pytest.mark.parametrize(
     ("respond", "message"),
     [
-        (_invalid_cleanup, "The model gave no valid answer for the sentence"),
+        (_invalid_cleanup, "The model gave no valid answer for"),
+        (_misnumbered_correction, "The model gave no valid answer for"),
         (_rejected_key, "status_code: 401"),
     ],
 )
@@ -351,7 +395,7 @@ def test_a_failing_model_call_is_an_error(
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        assert main(["check", str(audio)]) == 1
+        assert main(["check", str(audio), "--block-sentences", "1"]) == 1
         gc.collect()  # a queued call that never ran warns when collected
 
     out, err = capsys.readouterr()
@@ -439,6 +483,17 @@ def test_a_missing_audio_file_is_an_error(
 
     assert main(["check", str(audio)]) == 1
     assert capsys.readouterr().err == f"joel: error: {audio} is not a file.\n"
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "six"])
+def test_block_sentences_must_be_a_whole_number_of_at_least_one(
+    value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["check", str(tmp_path), "--block-sentences", value])
+
+    assert exited.value.code == 2
+    assert f"{value!r} is not a whole number of at least 1" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("value", ["2", "-0.1", "high"])

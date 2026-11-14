@@ -43,9 +43,10 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | `--model` | `anthropic:claude-opus-5-5` | Any Pydantic AI model string |
 | `--min-confidence` | `0.67` | Filter threshold (step 6); value from the Cambridge paper |
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
+| `--block-sentences` | `6` | Sentences per LLM call (steps 3 and 4); `check` and `estimate` |
 | `--json` | off | Prints the full result as JSON to stdout |
 
-`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per sentence (cleanup and correction), and prices their tokens with `genai-prices`. The tokens per call were measured against the default model with Joel's prompts and need measuring again when a prompt changes. Retries aren't counted, and the estimate's last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
+`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per block of `--block-sentences` sentences (cleanup and correction), and prices their tokens with `genai-prices`. A call's tokens are a fixed part per block, mostly the instructions, plus a part per word. Both were measured against the default model with Joel's prompts and need measuring again when a prompt changes. The estimate assumes no prompt caching and doesn't count retries, and its last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
 
 ## Pipeline
 
@@ -131,23 +132,26 @@ Splits the transcript into sentences on terminal punctuation (`.`, `?`, `!`) att
 
 ### 3. `strip_disfluencies` (LLM)
 
-The LLM receives the sentence as numbered words and returns **only the indices to drop**: "um/uh", repetitions, and false starts. It never rewrites text, so it cannot add or change a word, and the clean-word → `Word.index` → timestamp map stays exact.
+The LLM receives a block of up to `--block-sentences` sentences as one passage of numbered words and returns **only the indices to drop**: "um/uh", repetitions, and false starts. It never rewrites text, so it cannot add or change a word, and the clean-word → `Word.index` → timestamp map stays exact. The dropped indices are then split back per sentence.
 
 ```json
 {"input": [[12, "I"], [13, "went,"], [14, "I"], [15, "was"], [16, "uh"], [17, "going"]],
  "output": {"drop": [12, 13, 16]}}
 ```
 
-Deterministic validation: an index outside the sentence is an error and the call is retried once. If the retry is also wrong, the run stops with an error that names the sentence. Dropped indices appear in `--json` for auditing.
+Deterministic validation: an index outside the passage is an error and the call is retried once. If the retry is also wrong, the run stops with an error that names the passage. Dropped indices appear in `--json` for auditing.
 
 ### 4. `correct` (LLM)
 
-One call per clean sentence, with the previous and next sentences as context (only the middle one is corrected). Structured output:
+One call per block of up to `--block-sentences` clean sentences (default 6), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Structured output, one item per number:
 
 ```json
-{"grammatical": "There are many people in the room.",
- "natural": "There are a lot of people in the room."}
+{"sentences": [{"number": 1,
+                "grammatical": "There are many people in the room.",
+                "natural": "There are a lot of people in the room."}]}
 ```
+
+An answer whose numbers aren't exactly 1 to n, in order, is retried once.
 
 - `grammatical`: minimal edit, grammar only. A correct sentence comes back identical.
 - `natural`: minimal edit on top of `grammatical`, only what a native speaker would find odd. If nothing sounds odd, identical to `grammatical`.
@@ -188,7 +192,7 @@ Terminal:
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: $0.02 for 6 model calls (3204 input and 144 output tokens) with anthropic:claude-opus-5-5.
+Cost: under $0.01 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
 ```
 
 There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
@@ -288,12 +292,13 @@ Architectural decisions live in [`docs/decisions/`](../decisions/README.md):
 - [ADR-0005](../decisions/0005-naturalness-as-second-correction-target.md): naturalness as a second correction target.
 - [ADR-0006](../decisions/0006-spacy-tokenization-with-offset-mapping.md): spaCy tokenization with offset mapping.
 - [ADR-0007](../decisions/0007-word-timestamps-optional-in-transcriber-contract.md): word timestamps optional in the `Word` contract, so `gpt-transcribe` fits behind the interface.
+- [ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md): cleanup and correction run over numbered blocks of sentences, one call per block.
 
 Smaller choices, reversible in an afternoon:
 
 | Choice | Reason |
 | --- | --- |
-| One sentence per LLM call, neighbors as context | Local, traceable edits; context resolves tense and reference |
+| `--block-sentences` defaults to 6 | Enough to share one prompt across most of a minute of speech, small enough that a retry repeats little ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)) |
 | Low-confidence edits hidden by default | Precision over recall |
 | At most 8 model calls in flight, every cleanup before any correction | A correction reads its neighbors' clean text, so cleanup has to finish first; 8 keeps long recordings fast while keeping each burst of requests small |
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |

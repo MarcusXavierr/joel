@@ -128,7 +128,26 @@ def test_estimate_reports_duration_words_and_cost(
     assert status == 0
     assert "1:00 of audio, about 150 words in 13 sentences" in out
     assert "anthropic:claude-opus-5-5: about $" in out
+    assert "for 6 calls" in out
+    assert (
+        "Assumes 150 words per minute, 12 words per sentence and 6 sentences per "
+        "call, with no prompt caching; a retried call costs extra." in out
+    )
+
+
+def test_estimate_takes_the_block_size(
+    tmp_path: Path,
+    fake_ffmpeg: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_ffmpeg(ONE_MINUTE_OF_PCM)
+
+    status = main(["estimate", str(tmp_path / "talk.m4a"), "--block-sentences", "1"])
+
+    out = capsys.readouterr().out
+    assert status == 0
     assert "for 26 calls" in out
+    assert "12 words per sentence and 1 sentence per call," in out
 
 
 def test_a_cost_below_a_cent_says_so(
@@ -180,4 +199,4 @@ def test_installed_command_estimates_a_real_recording() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "0:09 of audio, about 22 words in 2 sentences" in result.stdout
-    assert "for 4 calls" in result.stdout
+    assert "for 2 calls" in result.stdout
