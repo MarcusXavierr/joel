@@ -57,6 +57,18 @@ async def test_a_sentence_of_only_disfluencies_keeps_no_words(
     assert clean.dropped == [3]
 
 
+async def test_a_passage_of_two_sentences_drops_a_word_in_each(
+    scripted_model: ScriptedModelFactory,
+) -> None:
+    passage = sentence(0, "Uh,", "he", "go.", "She", "she", "left.")
+    scripted = scripted_model({"drop": [3, 0]})
+
+    clean = await strip_disfluencies(passage, model=scripted.model)
+
+    assert clean.dropped == [0, 3]
+    assert [w.text for w in clean.words] == ["he", "go.", "she", "left."]
+
+
 async def test_a_position_named_twice_is_dropped_once(
     scripted_model: ScriptedModelFactory,
 ) -> None:

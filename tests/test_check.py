@@ -3,21 +3,26 @@
 import asyncio
 import gc
 import json
+import re
 import warnings
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import pydantic_ai
+import pydantic_ai._display
 import pytest
 from conftest import user_prompt
 from errant.annotator import Annotator  # type: ignore[import-untyped]
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.usage import RequestUsage
 
 from joel.check import CheckResult, run_check
 from joel.cli import main
+from joel.llm import BLOCK_SENTENCES
 from joel.report import render
 from joel.transcribers.openai import AudioTooLargeError
 from joel.transcript import Transcript, Word
@@ -67,10 +72,12 @@ class FakeTranscriber:
 class PipelineModel:
     """A model that answers both LLM steps by content, so call order doesn't matter.
 
-    Every call costs 100 input and 10 output tokens.
+    Every call costs 100 input and 10 output tokens, `cache_read_tokens` of the
+    input read from the prompt cache.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, cache_read_tokens: int = 0) -> None:
+        self.cache_read_tokens = cache_read_tokens
         self.prompts: list[str] = []
         self.model = FunctionModel(self.respond)
 
@@ -82,13 +89,30 @@ class PipelineModel:
         if "drop" in tool.parameters_json_schema["properties"]:
             answer = {"drop": _disfluencies(json.loads(prompt))}
         else:
-            sentence = prompt.split("Sentence to correct: ", 1)[1].split("\n", 1)[0]
-            for wrong, right in FIXES.items():
-                sentence = sentence.replace(wrong, right)
-            answer = {"grammatical": sentence, "natural": sentence}
+            block = prompt.split("Sentences to correct:\n", 1)[1].splitlines()
+            items = []
+            for line in block:
+                found = re.match(r"(\d+)\. (.*)", line)
+                if found is None:
+                    break
+                sentence = found[2]
+                for wrong, right in FIXES.items():
+                    sentence = sentence.replace(wrong, right)
+                items.append(
+                    {
+                        "number": int(found[1]),
+                        "grammatical": sentence,
+                        "natural": sentence,
+                    }
+                )
+            answer = {"sentences": items}
         return ModelResponse(
             parts=[ToolCallPart(tool.name, answer)],
-            usage=RequestUsage(input_tokens=100, output_tokens=10),
+            usage=RequestUsage(
+                input_tokens=100,
+                output_tokens=10,
+                cache_read_tokens=self.cache_read_tokens,
+            ),
         )
 
 
@@ -110,6 +134,7 @@ async def check(
     model: PipelineModel,
     annotator: Annotator,
     min_confidence: float = 0.67,
+    block_sentences: int = BLOCK_SENTENCES,
 ) -> CheckResult:
     return await run_check(
         Path("talk.m4a"),
@@ -118,15 +143,28 @@ async def check(
         model_name=MODEL,
         min_confidence=min_confidence,
         annotator=annotator,
+        block_sentences=block_sentences,
     )
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("block_sentences", "requests"),
+    [(BLOCK_SENTENCES, 2), (2, 4), (1, 6)],
+    ids=[
+        "one block per step",
+        "a full block then a partial one",
+        "one sentence per call",
+    ],
+)
 async def test_finds_the_known_mistakes_and_not_the_disfluencies(
-    annotator: Annotator,
+    annotator: Annotator, block_sentences: int, requests: int
 ) -> None:
     result = await check(
-        FakeTranscriber("local", spoken_words()), PipelineModel(), annotator
+        FakeTranscriber("local", spoken_words()),
+        PipelineModel(),
+        annotator,
+        block_sentences=block_sentences,
     )
 
     assert [s.dropped for s in result.sentences] == [[5], [16], []]
@@ -141,7 +179,11 @@ async def test_finds_the_known_mistakes_and_not_the_disfluencies(
         ("grammar", "U:VERB:TENSE", "am", "", [20]),
     ]
     assert all(f.uncertain is None for f in edits)
-    assert (result.requests, result.input_tokens, result.output_tokens) == (6, 600, 60)
+    assert (result.requests, result.input_tokens, result.output_tokens) == (
+        requests,
+        100 * requests,
+        10 * requests,
+    )
     assert result.cost_usd is not None
 
 
@@ -174,16 +216,39 @@ async def test_a_sentence_left_empty_is_not_corrected_or_used_as_context(
     words = unscored("He", "go", "home.", "Uh.", "She", "go", "out.")
     model = PipelineModel()
 
-    result = await check(FakeTranscriber("local", words), model, annotator)
+    result = await check(
+        FakeTranscriber("local", words), model, annotator, block_sentences=1
+    )
 
     middle = result.sentences[1]
     assert middle.correction is None
     assert middle.edits == []
     assert result.requests == 5  # three cleanups, two corrections
-    corrections = sorted(p for p in model.prompts if "Sentence to correct" in p)
+    corrections = sorted(p for p in model.prompts if "Sentences to correct" in p)
     assert corrections == [
-        "Previous sentence: He go home.\nSentence to correct: She go out.",
-        "Sentence to correct: He go home.\nNext sentence: She go out.",
+        "Previous sentence: He go home.\nSentences to correct:\n1. She go out.",
+        "Sentences to correct:\n1. He go home.\nNext sentence: She go out.",
+    ]
+
+
+@pytest.mark.anyio
+async def test_each_block_reads_the_sentences_around_it_as_context(
+    annotator: Annotator,
+) -> None:
+    words = unscored(
+        "He go home.", "She go out.", "We go in.", "They go up.", "I go down."
+    )
+    model = PipelineModel()
+
+    await check(FakeTranscriber("local", words), model, annotator, block_sentences=2)
+
+    corrections = sorted(p for p in model.prompts if "Sentences to correct" in p)
+    assert corrections == [
+        "Previous sentence: She go out.\nSentences to correct:\n"
+        "1. We go in.\n2. They go up.\nNext sentence: I go down.",
+        "Previous sentence: They go up.\nSentences to correct:\n1. I go down.",
+        "Sentences to correct:\n1. He go home.\n2. She go out.\n"
+        "Next sentence: We go in.",
     ]
 
 
@@ -195,7 +260,7 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
     assert (result.requests, result.cost_usd) == (0, Decimal(0))
     assert render(result, show_uncertain=False) == (
         "No mistakes found.\n\n"
-        f"Cost: $0.00 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
+        f"Cost: $0.000 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
     )
 
 
@@ -203,7 +268,9 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
 async def test_a_long_recording_gets_every_call_it_needs(annotator: Annotator) -> None:
     words = unscored(*["He go home."] * 30)  # past pydantic-ai's 50-request default
 
-    result = await check(FakeTranscriber("local", words), PipelineModel(), annotator)
+    result = await check(
+        FakeTranscriber("local", words), PipelineModel(), annotator, block_sentences=1
+    )
 
     assert result.requests == 60
 
@@ -230,10 +297,86 @@ async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> No
         model_name=MODEL,
         min_confidence=0.67,
         annotator=annotator,
+        block_sentences=1,
     )
 
     assert result.requests == 40
     assert peak == 8
+
+
+@pytest.mark.anyio
+async def test_each_step_runs_its_first_call_alone(annotator: Annotator) -> None:
+    answers = PipelineModel()
+    started: dict[str, list[int]] = {"cleanup": [], "correct": []}
+    finished = {"cleanup": 0, "correct": 0}
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tool = info.output_tools[0]
+        step = (
+            "cleanup"
+            if "drop" in tool.parameters_json_schema["properties"]
+            else "correct"
+        )
+        started[step].append(finished[step])
+        await asyncio.sleep(0.01)
+        finished[step] += 1
+        return answers.respond(messages, info)
+
+    await run_check(
+        Path("talk.m4a"),
+        FakeTranscriber("local", unscored(*["He go home."] * 4)),
+        model=FunctionModel(respond),
+        model_name=MODEL,
+        min_confidence=0.67,
+        annotator=annotator,
+        block_sentences=1,
+    )
+
+    # The first call writes the prompt cache; the others start once it's done.
+    assert started == {"cleanup": [0, 1, 1, 1], "correct": [0, 1, 1, 1]}
+
+
+@pytest.mark.anyio
+async def test_every_call_asks_to_cache_only_the_instructions(
+    annotator: Annotator,
+) -> None:
+    answers = PipelineModel()
+    settings: list[object] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        settings.append(info.model_request_parameters.cache)
+        return answers.respond(messages, info)
+
+    # Only a model that says it caches is handed the cache setting.
+    caching = FunctionModel(respond, profile=ModelProfile(supports_cache=True))
+    await run_check(
+        Path("talk.m4a"),
+        FakeTranscriber("local", spoken_words()),
+        model=caching,
+        model_name=MODEL,
+        min_confidence=0.67,
+        annotator=annotator,
+        block_sentences=1,
+    )
+
+    assert settings == [{"messages": False}] * 6
+
+
+@pytest.mark.anyio
+async def test_tokens_read_from_the_cache_are_counted_and_cost_less(
+    annotator: Annotator,
+) -> None:
+    words = spoken_words()
+
+    cached = await check(
+        FakeTranscriber("local", words), PipelineModel(cache_read_tokens=80), annotator
+    )
+    uncached = await check(FakeTranscriber("local", words), PipelineModel(), annotator)
+
+    assert (cached.requests, cached.input_tokens) == (2, 200)
+    assert (cached.cache_read_tokens, cached.cache_write_tokens) == (160, 0)
+    assert cached.cost_usd is not None and uncached.cost_usd is not None
+    assert cached.cost_usd < uncached.cost_usd
 
 
 @pytest.fixture
@@ -274,7 +417,7 @@ def test_the_json_rebuilds_the_terminal_report(
     assert render(result, show_uncertain=show_uncertain) + "\n" == report
 
 
-def test_the_model_and_threshold_flags_reach_the_run(
+def test_the_model_threshold_and_block_flags_reach_the_run(
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -284,18 +427,53 @@ def test_the_model_and_threshold_flags_reach_the_run(
     audio.write_bytes(b"")
 
     flags = ["--model", "nope:nothing", "--min-confidence", "0.5", "--json"]
+    flags += ["--block-sentences", "1"]
     assert main(["check", str(audio), *flags]) == 0
 
     result = CheckResult.model_validate_json(capsys.readouterr().out)
     assert result.model == "nope:nothing"
+    assert result.requests == 6  # three sentences, one call each per step
     assert result.cost_usd is None  # genai-prices can't price it; the run goes on
     assert all(f.uncertain is None for s in result.sentences for f in s.edits)
+
+
+def test_check_prints_no_banner_where_pydantic_ai_would_show_one(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # pydantic-ai stays quiet under pytest and CI; lift both so it would speak.
+    monkeypatch.delenv("PYTEST_VERSION")
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("PYDANTIC_AI_NO_BANNER", raising=False)
+    # stderr is a pipe here; AI_AGENT says someone reads it anyway.
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(pydantic_ai._display, "_banner_displayed", False)
+    monkeypatch.setattr(pydantic_ai, "BANNER_ENABLED", True)
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+
+    assert main(["check", str(audio)]) == 0
+    out, err = capsys.readouterr()
+    assert "pydantic-ai v" not in out + err
 
 
 def _invalid_cleanup(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     return ModelResponse(
         parts=[ToolCallPart(info.output_tools[0].name, {"drop": [99]})]
     )
+
+
+def _misnumbered_correction(
+    messages: list[ModelMessage], info: AgentInfo
+) -> ModelResponse:
+    tool = info.output_tools[0]
+    if "drop" in tool.parameters_json_schema["properties"]:
+        return ModelResponse(parts=[ToolCallPart(tool.name, {"drop": []})])
+    wrong = {"number": 2, "grammatical": "He went home.", "natural": "He went home."}
+    return ModelResponse(parts=[ToolCallPart(tool.name, {"sentences": [wrong]})])
 
 
 def _rejected_key(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -305,7 +483,8 @@ def _rejected_key(messages: list[ModelMessage], info: AgentInfo) -> ModelRespons
 @pytest.mark.parametrize(
     ("respond", "message"),
     [
-        (_invalid_cleanup, "The model gave no valid answer for the sentence"),
+        (_invalid_cleanup, "The model gave no valid answer for"),
+        (_misnumbered_correction, "The model gave no valid answer for"),
         (_rejected_key, "status_code: 401"),
     ],
 )
@@ -325,7 +504,7 @@ def test_a_failing_model_call_is_an_error(
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        assert main(["check", str(audio)]) == 1
+        assert main(["check", str(audio), "--block-sentences", "1"]) == 1
         gc.collect()  # a queued call that never ran warns when collected
 
     out, err = capsys.readouterr()
@@ -359,7 +538,7 @@ def test_audio_ffmpeg_cannot_read_is_an_error(
 def test_an_unknown_transcriber_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
 
@@ -370,7 +549,7 @@ def test_an_unknown_transcriber_is_an_error(
 def test_a_missing_api_key_stops_the_run_before_transcribing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def no_transcriber(name: str) -> FakeTranscriber:
         raise AssertionError("transcribed before checking the model")
@@ -382,7 +561,7 @@ def test_a_missing_api_key_stops_the_run_before_transcribing(
     assert main(["check", str(audio)]) == 1
     err = capsys.readouterr().err
     assert err.startswith("joel: error:")
-    assert "ANTHROPIC_API_KEY" in err
+    assert "OPENAI_API_KEY" in err
 
 
 def test_audio_the_transcriber_refuses_is_an_error(
@@ -413,6 +592,17 @@ def test_a_missing_audio_file_is_an_error(
 
     assert main(["check", str(audio)]) == 1
     assert capsys.readouterr().err == f"joel: error: {audio} is not a file.\n"
+
+
+@pytest.mark.parametrize("value", ["0", "-3", "six"])
+def test_block_sentences_must_be_a_whole_number_of_at_least_one(
+    value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["check", str(tmp_path), "--block-sentences", value])
+
+    assert exited.value.code == 2
+    assert f"{value!r} is not a whole number of at least 1" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("value", ["2", "-0.1", "high"])
@@ -467,4 +657,20 @@ def test_check_flags_the_four_mistakes_in_the_recording(
         ("is", "are", ["is"]),
         ("am", "", ["am"]),
     ]
-    assert render(result, show_uncertain=False).count(" grammar\n") == 4
+    report = render(result, show_uncertain=False)
+    entries = report.split("\n\n")[:-1]  # the cost line closes the report
+    assert [e.count("  said:") for e in entries] == [1, 1, 1]
+    first = entries[0].splitlines()
+    assert re.fullmatch(r"\d\d:\d\d\.\d–\d\d:\d\d\.\d", first[0])
+    assert first[1].startswith("  said:    Yesterday he go to school,")
+    assert first[2].startswith("  correct: ")
+    assert all(line.startswith(" " * 11) for line in first[3:])
+    changes = [line.split(maxsplit=1) for line in first[3:]]
+    assert [re.sub(r"\s+", " ", change) for _, change in changes] == [
+        "go → went R:VERB:TENSE grammar",
+        "do → does R:VERB:SVA grammar",
+    ]
+    clocks = [clock for clock, _ in changes]
+    assert all(re.fullmatch(r"\d\d:\d\d\.\d", clock) for clock in clocks)
+    assert clocks[0] < clocks[1]
+    assert report.count(" grammar\n") == 4
