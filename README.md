@@ -5,7 +5,7 @@
 Joel is a command-line tool for people who speak English as a second language. You give it a recording of yourself talking. It tells you which sentences had a grammar mistake, when in the recording you said them, and what you should have said.
 
 > [!IMPORTANT]
-> Joel is at an early stage. `joel check`, `joel bench`, and `joel estimate` all work, but they have only been tried on short test recordings. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). Details may still move.
+> Joel works, but it is young. `joel check`, `joel bench`, and `joel estimate` all run, and the seven tickets of stage 1 are merged. So far Joel has only been tried on short test recordings and synthetic speech. Parakeet stays the default transcriber until `joel bench` has run over about 20 real recordings ([issue #8](https://github.com/MarcusXavierr/joel/issues/8)), and until then its [decision record](docs/decisions/0002-parakeet-ultra-as-default-local-transcriber.md) stays `proposed`. The repo holds the [design](docs/plans/2026-11-13-joel-design.md) and the [decisions](docs/decisions/README.md) behind it.
 
 ## What a report looks like
 
@@ -51,7 +51,7 @@ Three things you install yourself:
 
 | Tool | What Joel uses it for |
 | --- | --- |
-| [uv](https://docs.astral.sh/uv/) | Installs the Python packages and runs every command in this README |
+| [uv](https://docs.astral.sh/uv/) | Installs Joel and its Python packages |
 | Python 3.13 | The language Joel is written in. If you don't have it, `uv python install 3.13` gets it |
 | [ffmpeg](https://ffmpeg.org/) | Reads your audio file, whatever the format, and converts it for the local model |
 
@@ -82,22 +82,22 @@ Other choices need API keys, set as environment variables:
 
 With the default transcriber your audio stays on your machine, but the text of what you said is sent to the language model provider to be corrected. The two cloud transcribers also upload the audio file.
 
-uv installs the Python packages for you. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). `pyproject.toml` declares all of them, so `uv sync` installs them. Pydantic AI comes with every provider of text models it supports, so `--model` can name a model from any of them. TypeSafe is left out because its models answer typed questions and can't write corrected sentences.
+uv installs Joel's Python packages when you install Joel. They are listed in the design under ["Dependencies"](docs/plans/2026-11-13-joel-design.md#dependencies); the main ones are `transcribe-cpp` (runs Parakeet), `errant` and `spacy` (the diff), and `pydantic-ai-slim` (the language model calls). Pydantic AI comes with every provider of text models it supports, so `--model` can name a model from any of them. TypeSafe is left out because its models answer typed questions and can't write corrected sentences.
+
+ERRANT also needs spaCy's English model, `en_core_web_sm`, which isn't on PyPI. The first `joel check` downloads it (13 MB) from [spaCy's GitHub release](https://github.com/explosion/spacy-models/releases/tag/en_core_web_sm-3.8.0), checks it against a pinned hash, and keeps it in `~/.cache/joel` (`$XDG_CACHE_HOME/joel` when that's set). [ADR-0012](docs/decisions/0012-download-the-spacy-model-on-first-use.md) explains why.
 
 ## Installation
 
-Joel isn't on PyPI. Clone the repo and let uv set it up:
+Joel is on PyPI. Install it as a uv tool, which gives Joel its own environment and puts `joel` on your `PATH`:
 
 ```bash
-git clone https://github.com/MarcusXavierr/joel.git
-cd joel
-uv sync
-uv run joel --help
+uv tool install joel
+joel --help
 ```
 
-The last command lists the commands that exist so far.
+The second command lists Joel's commands. The SDKs for the two cloud transcribers are optional extras: `uv tool install 'joel[elevenlabs,openai]'` installs both, or name only the one you need. `uv tool upgrade joel` updates Joel later.
 
-The SDKs for the two cloud transcribers are optional extras, installed with `uv sync --all-extras`. The first run of the local transcriber will download Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuse it from there afterwards. If another app already put the same file in that cache, Joel uses it and downloads nothing.
+Two models download the first time Joel needs them. The local transcriber downloads Parakeet Ultra (740 MB) into the standard Hugging Face cache, `~/.cache/huggingface/hub`, and reuses it from there. If another app already put the same file in that cache, Joel uses it and downloads nothing. `joel check` also downloads spaCy's `en_core_web_sm` (13 MB) into `~/.cache/joel` on its first run, as [Dependencies](#dependencies) describes.
 
 ## Usage
 
@@ -148,11 +148,24 @@ Assumes 150 words per minute, 12 words per sentence and 7 sentences per call, wi
 
 The estimate only looks at how long the recording is. Joel sends the sentences to the language model in blocks of 7, and each block costs two calls, one to set the hesitations aside and one to correct it. `--block-sentences` changes the block size here and in `joel check`. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
 
+## Using Joel from another program
+
+Run `joel check <audio> --json` and read standard output. The JSON is the whole result of the run: the transcript, the corrections, every mistake with the reason it was kept or held back, and the tokens and cost. On an error Joel prints the reason to standard error and exits with 1. The Python modules inside the package aren't a stable API and can change in any release, so don't import them.
+
 ## Contributing
 
-Joel is a personal tool built in the open. The work is split into [seven issues](https://github.com/MarcusXavierr/joel/issues), and [issue #8](https://github.com/MarcusXavierr/joel/issues/8) says which order to take them in. If you want to pick one up, leave a comment on it first.
+Joel is a personal tool built in the open. The tickets of stage 1 are closed, and open work lives in [the issues](https://github.com/MarcusXavierr/joel/issues). If you want to pick one up, leave a comment on it first.
 
-Set up as in [Installation](#installation), then check that `uv run python --version` prints `Python 3.13.x`. A few rules keep the project consistent:
+To work on Joel, clone it and let uv set up the environment:
+
+```bash
+git clone https://github.com/MarcusXavierr/joel.git
+cd joel
+uv sync --all-extras
+uv run joel --help
+```
+
+Then check that `uv run python --version` prints `Python 3.13.x`. The dev group installs `en_core_web_sm` as a package, so the tests never download it. A few rules keep the project consistent:
 
 - Use uv for everything (`uv add`, `uv run`, `uv sync`). Don't call `pip` or create a virtual environment by hand.
 - Write the test first and watch it fail before you write the code. The fast suite runs with `uv run pytest`, which skips tests marked `slow` (they load a model or need ffmpeg); `uv run pytest -m slow` runs those. No test calls a real language model or touches the network. `uv run ruff check src tests` and `uv run mypy src tests` must pass too.
@@ -161,3 +174,7 @@ Set up as in [Installation](#installation), then check that `uv run python --ver
 - An accepted decision record is never edited. If a decision changes, write a new record that replaces the old one.
 
 Regenerating the synthetic test recording, `tests/fixtures/audio/acceptance.wav`, needs [espeak-ng](https://github.com/espeak-ng/espeak-ng), which nothing else uses. The exact command is in a comment in `tests/test_parakeet.py`. If you work with a coding agent, [AGENTS.md](AGENTS.md) has the same rules written for it.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
