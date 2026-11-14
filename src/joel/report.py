@@ -48,6 +48,7 @@ class Report(BaseModel):
     transcriber: str
     timestamps: bool  # whether the transcriber gave word times
     confidence_scores: bool  # whether it gave word confidence
+    prompts: dict[str, str]  # each prompt's name -> sha256 hex of the text used
     sentences: list[ReportSentence]
     model: str
     requests: int
@@ -101,6 +102,7 @@ def build_report(result: CheckResult) -> Report:
         timestamps=not words
         or any(w.start_ms is not None and w.end_ms is not None for w in words),
         confidence_scores=not words or any(w.confidence is not None for w in words),
+        prompts=result.prompts,
         sentences=sentences,
         model=result.model,
         requests=result.requests,

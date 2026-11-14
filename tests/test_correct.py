@@ -15,6 +15,7 @@ PREVIOUS = "I lived in Recife."
 BLOCK = ["Yesterday he go to school.", "She don't like it."]
 FOLLOWING = "He liked it."
 FIXED = ["Yesterday he went to school.", "She didn't like it."]
+CORRECT = "Fix the grammar."
 
 
 def numbered(*numbers: int) -> dict[str, object]:
@@ -33,7 +34,11 @@ async def test_numbers_the_block_between_its_neighbors(
     scripted = scripted_model(numbered(1, 2))
 
     corrections = await correct(
-        BLOCK, previous=PREVIOUS, following=FOLLOWING, model=scripted.model
+        BLOCK,
+        previous=PREVIOUS,
+        following=FOLLOWING,
+        instructions=CORRECT,
+        model=scripted.model,
     )
 
     assert corrections == [Correction(grammatical=s, natural=s) for s in FIXED]
@@ -44,6 +49,7 @@ async def test_numbers_the_block_between_its_neighbors(
         "2. She don't like it.\n"
         "Next sentence: He liked it."
     )
+    assert scripted.instructions() == CORRECT
 
 
 @pytest.mark.parametrize(
@@ -63,7 +69,13 @@ async def test_a_missing_neighbor_leaves_its_line_out(
 ) -> None:
     scripted = scripted_model(numbered(1, 2))
 
-    await correct(BLOCK, previous=previous, following=following, model=scripted.model)
+    await correct(
+        BLOCK,
+        previous=previous,
+        following=following,
+        instructions=CORRECT,
+        model=scripted.model,
+    )
 
     prompt = scripted.prompt()
     for line in absent:
@@ -79,7 +91,7 @@ async def test_a_misnumbered_answer_is_retried_once(
     scripted = scripted_model(numbered(*wrong), numbered(1, 2))
 
     corrections = await correct(
-        BLOCK, previous=None, following=None, model=scripted.model
+        BLOCK, previous=None, following=None, instructions=CORRECT, model=scripted.model
     )
 
     assert [c.grammatical for c in corrections] == FIXED
@@ -92,7 +104,13 @@ async def test_a_second_misnumbered_answer_fails_naming_the_block(
     scripted = scripted_model(numbered(1), numbered(1))
 
     with pytest.raises(ModelAnswerError, match="She don't like it."):
-        await correct(BLOCK, previous=None, following=None, model=scripted.model)
+        await correct(
+            BLOCK,
+            previous=None,
+            following=None,
+            instructions=CORRECT,
+            model=scripted.model,
+        )
 
     assert len(scripted.calls) == 2
 
@@ -100,5 +118,14 @@ async def test_a_second_misnumbered_answer_fails_naming_the_block(
 async def test_no_sentences_need_no_call(scripted_model: ScriptedModelFactory) -> None:
     scripted = scripted_model()
 
-    assert await correct([], previous=None, following=None, model=scripted.model) == []
+    assert (
+        await correct(
+            [],
+            previous=None,
+            following=None,
+            instructions=CORRECT,
+            model=scripted.model,
+        )
+        == []
+    )
     assert scripted.calls == []

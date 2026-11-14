@@ -14,6 +14,7 @@ from joel.transcript import Transcript, Word
 MODEL = "anthropic:claude-opus-5-5"
 SAID = "There is many people in the the room."
 UNSURE = '"is" was heard with confidence 0.50, below the 0.67 threshold'
+HASHES = {"disfluencies": "d1" * 32, "correct": "c0" * 32}
 
 
 def result(
@@ -54,6 +55,7 @@ def result(
     )
     return CheckResult(
         model=model,
+        prompts=HASHES,
         transcript=Transcript(transcriber=transcriber, words=words),
         sentences=[
             CheckedSentence(
@@ -111,6 +113,7 @@ def test_the_document_holds_every_mistake_with_its_times() -> None:
         "transcriber": "parakeet",
         "timestamps": True,
         "confidence_scores": True,
+        "prompts": HASHES,
         "sentences": [
             {
                 "start_ms": 12_000,

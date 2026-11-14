@@ -17,6 +17,7 @@ from joel.correct import Correction, correct
 from joel.cost import PriceUnavailableError, price
 from joel.disfluencies import CleanSentence, strip_disfluencies
 from joel.edits import diff_edits
+from joel.prompts import Prompts
 from joel.sentences import split_sentences
 from joel.transcribers import Transcriber
 from joel.transcript import Transcript
@@ -38,6 +39,7 @@ class CheckResult(BaseModel):
     """Everything one run decided. The terminal report is rebuilt from this alone."""
 
     model: str  # the model string the run was given
+    prompts: dict[str, str]  # each prompt's name -> sha256 hex of the text used
     transcript: Transcript  # as the transcriber returned it
     sentences: list[CheckedSentence]
     requests: int  # model calls, retries included
@@ -57,6 +59,7 @@ async def run_check(
     min_confidence: float,
     annotator: Annotator,
     block_sentences: int,
+    prompts: Prompts,
 ) -> CheckResult:
     """Transcribe `audio` and run every later step over it.
 
@@ -78,6 +81,7 @@ async def run_check(
         async with limit:
             clean = await strip_disfluencies(
                 [by_index[i] for sentence in block for i in sentence],
+                instructions=prompts.disfluencies,
                 model=model,
                 usage=usage,
             )
@@ -111,6 +115,7 @@ async def run_check(
                     if block[-1] + 1 < len(spoken)
                     else None
                 ),
+                instructions=prompts.correct,
                 model=model,
                 usage=usage,
             )
@@ -159,6 +164,7 @@ async def run_check(
         cost = None
     return CheckResult(
         model=model_name,
+        prompts=prompts.hashes,
         transcript=transcript,
         sentences=checked,
         requests=usage.requests,

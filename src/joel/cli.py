@@ -24,6 +24,7 @@ from joel.decode import SAMPLE_RATE, DecodeError, decode
 from joel.edits import load_annotator
 from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
+from joel.prompts import NAMES, PromptError, builtin, help_text, load_prompts
 from joel.report import build_report, render
 from joel.spacy_model import SpacyModelUnavailableError
 from joel.transcribers import TranscriberUnavailableError, load_transcriber
@@ -44,6 +45,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     check = commands.add_parser(
         "check",
         help="Report every grammar mistake in a recording, with when you said it.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=help_text(),
     )
     check.add_argument("audio", type=Path, help="recording in any format ffmpeg reads")
     check.add_argument(
@@ -105,7 +108,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     bench.set_defaults(run=_bench)
 
     estimate = commands.add_parser(
-        "estimate", help="Estimate what the language model would cost for a recording."
+        "estimate",
+        help="Estimate what the language model would cost for a recording.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=help_text(),
     )
     estimate.add_argument(
         "audio", type=Path, help="recording in any format ffmpeg reads"
@@ -115,6 +121,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     estimate.set_defaults(run=_estimate)
 
+    prompt = commands.add_parser(
+        "prompt", help="Print a built-in prompt, to start your own from it."
+    )
+    prompt.add_argument("name", choices=NAMES, help="which prompt to print")
+    prompt.set_defaults(run=_prompt)
+
     for command in (check, estimate):
         command.add_argument(
             "--block-sentences",
@@ -122,6 +134,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             default=BLOCK_SENTENCES,
             metavar="N",
             help=f"sentences per language model call (default: {BLOCK_SENTENCES})",
+        )
+        command.add_argument(
+            "--prompt",
+            action="append",
+            dest="prompts",
+            metavar="NAME=FILE",
+            type=_prompt_override,
+            default=None,
+            help="use FILE instead of the built-in NAME prompt; "
+            "repeatable (names below)",
         )
 
     args = parser.parse_args(argv)
@@ -157,6 +179,15 @@ def _positive_int(text: str) -> int:
     return n
 
 
+def _prompt_override(text: str) -> tuple[str, Path]:
+    name, sep, path = text.partition("=")
+    if not sep or name not in NAMES:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not NAME=FILE with NAME one of: {', '.join(NAMES)}"
+        )
+    return name, Path(path)
+
+
 def _check(args: argparse.Namespace) -> int:
     audio: Path = args.audio
     if not audio.is_file():
@@ -165,6 +196,12 @@ def _check(args: argparse.Namespace) -> int:
     saved: Path | None = args.json
     if saved is not None and not saved.parent.is_dir():
         print(f"joel: error: {saved.parent} is not a directory.", file=sys.stderr)
+        return 1
+    try:
+        # Read the prompts first: a bad file shouldn't cost a transcription.
+        prompts = load_prompts(dict(args.prompts or []), better=args.better)
+    except PromptError as exc:
+        print(f"joel: error: {exc}", file=sys.stderr)
         return 1
     try:
         # infer_model fails here on a missing API key, before any transcription.
@@ -179,6 +216,7 @@ def _check(args: argparse.Namespace) -> int:
                 min_confidence=args.min_confidence,
                 annotator=load_annotator(),
                 block_sentences=args.block_sentences,
+                prompts=prompts,
             )
         )
     except (
@@ -228,6 +266,11 @@ def _estimate(args: argparse.Namespace) -> int:
     audio: Path = args.audio
     model: str = args.model
     try:
+        load_prompts(dict(args.prompts or []), better=False)
+    except PromptError as exc:
+        print(f"joel: error: {exc}", file=sys.stderr)
+        return 1
+    try:
         seconds = len(decode(audio)) / (BYTES_PER_SAMPLE * SAMPLE_RATE)
         cost = estimate_cost(seconds, model, args.block_sentences)
     except (DecodeError, PriceUnavailableError) as exc:
@@ -251,4 +294,13 @@ def _estimate(args: argparse.Namespace) -> int:
         f"words per sentence and {args.block_sentences} {per_call} per call, "
         "with no prompt caching; a retried call costs extra."
     )
+    if args.prompts:
+        print(
+            "Measured with the built-in prompts; a --prompt file can change the cost."
+        )
+    return 0
+
+
+def _prompt(args: argparse.Namespace) -> int:
+    sys.stdout.write(builtin(args.name))
     return 0

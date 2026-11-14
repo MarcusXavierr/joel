@@ -2,6 +2,7 @@
 
 import asyncio
 import gc
+import hashlib
 import json
 import re
 import warnings
@@ -12,7 +13,7 @@ from pathlib import Path
 import pydantic_ai
 import pydantic_ai._display
 import pytest
-from conftest import user_prompt
+from conftest import instructions, user_prompt
 from errant.annotator import Annotator  # type: ignore[import-untyped]
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
@@ -23,6 +24,7 @@ from pydantic_ai.usage import RequestUsage
 from joel.check import CheckResult, run_check
 from joel.cli import main
 from joel.llm import BLOCK_SENTENCES
+from joel.prompts import NAMES, load_prompts
 from joel.report import Report, build_report, render
 from joel.transcribers.openai import AudioTooLargeError
 from joel.transcript import Transcript, Word
@@ -40,6 +42,7 @@ FIXES = {
 }
 FILLERS = {"uh", "um"}
 MODEL = "anthropic:claude-opus-5-5"
+PROMPTS = load_prompts({}, better=False)
 
 # main() configures logging for the whole process; each test gets the root back.
 pytestmark = pytest.mark.usefixtures("restore_root_logger")
@@ -79,11 +82,13 @@ class PipelineModel:
     def __init__(self, cache_read_tokens: int = 0) -> None:
         self.cache_read_tokens = cache_read_tokens
         self.prompts: list[str] = []
+        self.instructions: list[str | None] = []
         self.model = FunctionModel(self.respond)
 
     def respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         prompt = user_prompt(messages)
         self.prompts.append(prompt)
+        self.instructions.append(instructions(messages))
         tool = info.output_tools[0]
         answer: dict[str, object]
         if "drop" in tool.parameters_json_schema["properties"]:
@@ -144,6 +149,7 @@ async def check(
         min_confidence=min_confidence,
         annotator=annotator,
         block_sentences=block_sentences,
+        prompts=PROMPTS,
     )
 
 
@@ -298,6 +304,7 @@ async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> No
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
     )
 
     assert result.requests == 40
@@ -330,6 +337,7 @@ async def test_each_step_runs_its_first_call_alone(annotator: Annotator) -> None
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
     )
 
     # The first call writes the prompt cache; the others start once it's done.
@@ -357,6 +365,7 @@ async def test_every_call_asks_to_cache_only_the_instructions(
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
     )
 
     assert settings == [{"messages": False}] * 6
@@ -415,6 +424,7 @@ def test_the_json_file_rebuilds_the_terminal_report(
 
     document = json.loads(saved.read_text())
     assert "transcript" not in document
+    assert sorted(document["prompts"]) == sorted(NAMES)
     mistakes = [m for s in document["sentences"] for m in s["mistakes"]]
     assert [m["original"] for m in mistakes if m["uncertain"]] == ["is"]
     report = Report.model_validate(document)
@@ -482,6 +492,68 @@ def test_a_json_file_that_cannot_be_written_still_prints_the_report(
     out, err = capsys.readouterr()
     assert "  said:" in out
     assert err == f"joel: error: could not write {taken}: Is a directory\n"
+
+
+def test_a_prompt_file_replaces_the_built_in_instructions(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cli_pipeline(spoken_words())
+    model = PipelineModel()
+    monkeypatch.setattr("joel.cli.infer_model", lambda name: model.model)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    mine = tmp_path / "mine.md"
+    mine.write_text("Fix only the grammar.\n")
+    earlier = tmp_path / "earlier.md"
+    earlier.write_text("Fix everything.\n")
+    saved = tmp_path / "talk.json"
+
+    # The last --prompt for a name wins.
+    flags = ["--prompt", f"correct={earlier}", "--prompt", f"correct={mine}"]
+    flags += ["--json", str(saved)]
+    assert main(["check", str(audio), *flags]) == 0
+
+    sent = zip(model.prompts, model.instructions, strict=True)
+    corrections = [i for p, i in sent if "Sentences to correct" in p]
+    assert corrections == ["Fix only the grammar."]
+    prompts = Report.model_validate_json(saved.read_text()).prompts
+    assert prompts["correct"] == hashlib.sha256(b"Fix only the grammar.\n").hexdigest()
+    assert prompts["disfluencies"] == PROMPTS.hashes["disfluencies"]
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (None, "cannot read prompt file {path}: No such file or directory"),
+        (
+            "Fix it. $tone",
+            "{path}: unknown placeholder $tone; the correct prompt allows $natural.",
+        ),
+    ],
+    ids=["missing file", "unknown placeholder"],
+)
+def test_a_bad_prompt_file_stops_the_run_before_transcribing(
+    text: str | None,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def no_transcriber(name: str) -> FakeTranscriber:
+        raise AssertionError("transcribed before checking the prompts")
+
+    monkeypatch.setattr("joel.cli.load_transcriber", no_transcriber)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    mine = tmp_path / "mine.md"
+    if text is not None:
+        mine.write_text(text)
+
+    assert main(["check", str(audio), "--prompt", f"correct={mine}"]) == 1
+    expected = message.format(path=mine)
+    assert capsys.readouterr().err == f"joel: error: {expected}\n"
 
 
 def test_the_model_threshold_and_block_flags_reach_the_run(
