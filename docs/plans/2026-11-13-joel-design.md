@@ -40,7 +40,7 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--transcriber` | `parakeet` | `parakeet`, `elevenlabs`, `openai` |
-| `--model` | `openai:gpt-6-luna` | Any Pydantic AI model string |
+| `--model` | `openai-codex:gpt-6.1-terra` | Any Pydantic AI model string |
 | `--min-confidence` | `0.67` | Filter threshold (step 6); value from the Cambridge paper |
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
 | `--block-sentences` | `7` | Sentences per LLM call (steps 3 and 4); `check` and `estimate` |
@@ -143,7 +143,7 @@ Deterministic validation: an index outside the passage is an error and the call 
 
 ### 4. `correct` (LLM)
 
-One call per block of up to `--block-sentences` clean sentences (default 7), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). The default model, `openai:gpt-6-luna`, caches nothing at these sizes; the setting pays off on Anthropic models ([ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md)). Structured output, one item per number:
+One call per block of up to `--block-sentences` clean sentences (default 7), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). The default model, `openai-codex:gpt-6.1-terra`, caches nothing at these sizes; the setting pays off on Anthropic models ([ADR-0011](../decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md)). Structured output, one item per number:
 
 ```json
 {"sentences": [{"number": 1,
@@ -192,7 +192,7 @@ Terminal:
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: under $0.001 for 2 model calls (1574 input and 1035 output tokens) with openai:gpt-6-luna.
+Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
 
 There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
@@ -253,7 +253,7 @@ Timestamp failures and per-file errors follow the diffs. A transcriber that fail
 
 All installed and exercised on Python 3.13 on 2026-11-13. CLI built on stdlib `argparse`. Pydantic AI is used only for the two LLM calls, with no agents and no tools.
 
-Environment variables: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `OPENAI_API_KEY`.
+Environment variables: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `OPENAI_API_KEY`, and `CODEX_HOME` to find the Codex CLI's login somewhere other than `~/.codex`. The default model needs a `codex login`, not a key.
 
 ## Testing
 
@@ -295,12 +295,13 @@ Architectural decisions live in [`docs/decisions/`](../decisions/README.md):
 - [ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md): cleanup and correction run over numbered blocks of sentences, one call per block.
 - [ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md): each step's tool schema and instructions go to the provider's prompt cache, and the step's first block runs alone to write it.
 - [ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md): `openai:gpt-6-luna` as the default model and 7 as the default block size, chosen with a precision probe.
+- [ADR-0011](../decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md): `openai-codex:gpt-6.1-terra` as the default model, run on the ChatGPT plan through the Codex CLI's login; supersedes ADR-0010.
 
 Smaller choices, reversible in an afternoon:
 
 | Choice | Reason |
 | --- | --- |
-| `--block-sentences` defaults to 7 | Shares one prompt across about half a minute of speech; the probe found no loss for `gpt-6-luna` at 5 or 10 ([ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md)) |
+| `--block-sentences` defaults to 7 | Shares one prompt across about half a minute of speech; in the probe `gpt-6.1-terra` kept precision at 1.000 and recall at 0.983 or above with blocks of 5 and of 10 ([ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md)) |
 | Low-confidence edits hidden by default | Precision over recall |
 | At most 8 model calls in flight, every cleanup before any correction | A correction reads its neighbors' clean text, so cleanup has to finish first; 8 keeps long recordings fast while keeping each burst of requests small |
 | Each step's first block runs alone | It writes the prompt cache that the step's other blocks read ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)) |

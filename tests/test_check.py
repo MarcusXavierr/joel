@@ -538,18 +538,17 @@ def test_audio_ffmpeg_cannot_read_is_an_error(
 def test_an_unknown_transcriber_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
 
-    assert main(["check", str(audio), "--transcriber", "nope"]) == 1
+    flags = ["--transcriber", "nope", "--model", "test"]
+    assert main(["check", str(audio), *flags]) == 1
     assert capsys.readouterr().err.startswith("joel: error: Unknown transcriber 'nope'")
 
 
-def test_a_missing_api_key_stops_the_run_before_transcribing(
+def test_a_missing_codex_login_stops_the_run_before_transcribing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def no_transcriber(name: str) -> FakeTranscriber:
         raise AssertionError("transcribed before checking the model")
@@ -561,7 +560,7 @@ def test_a_missing_api_key_stops_the_run_before_transcribing(
     assert main(["check", str(audio)]) == 1
     err = capsys.readouterr().err
     assert err.startswith("joel: error:")
-    assert "OPENAI_API_KEY" in err
+    assert "codex login" in err
 
 
 def test_audio_the_transcriber_refuses_is_an_error(

@@ -22,10 +22,10 @@ $ joel check talk.m4a
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: under $0.001 for 2 model calls (1574 input and 1035 output tokens) with openai:gpt-6-luna.
+Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
 
-Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls cost for this recording.
+Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls would cost at API prices. With the default model your ChatGPT plan covers them, so nothing is billed per token.
 
 Joel would rather miss a mistake than invent one. A report that flags things you said correctly teaches you to ignore it, so anything the transcription was unsure about stays hidden unless you ask for it with `--show-uncertain`. The report still tells you how many it hid.
 
@@ -70,13 +70,15 @@ brew install ffmpeg
 
 Joel is developed on Linux (x86-64) with ffmpeg 6.0.1. It has not been tried on macOS or Windows.
 
-You also need API keys, set as environment variables:
+The language model runs on your ChatGPT plan by default, through the login of OpenAI's [Codex CLI](https://github.com/openai/codex). Install it and run `codex login` once; Joel reads that login and never changes it. This route isn't one OpenAI supports for other apps, so it may stop working, and it can use up your plan's limits ([ADR-0011](docs/decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md)). Without a ChatGPT plan, pass `--model openai:gpt-6.1-terra` and set `OPENAI_API_KEY`.
+
+Other choices need API keys, set as environment variables:
 
 | Variable | Needed for |
 | --- | --- |
-| `OPENAI_API_KEY` | Always. The correction step uses OpenAI's `gpt-6-luna` by default (`--model` changes that), and `--transcriber openai` uses it too |
-| `ANTHROPIC_API_KEY` | Only with an `anthropic:` model in `--model` |
-| `ELEVENLABS_API_KEY` | Only with `--transcriber elevenlabs` |
+| `OPENAI_API_KEY` | An `openai:` model in `--model`, or `--transcriber openai` |
+| `ANTHROPIC_API_KEY` | An `anthropic:` model in `--model` |
+| `ELEVENLABS_API_KEY` | `--transcriber elevenlabs` |
 
 With the default transcriber your audio stays on your machine, but the text of what you said is sent to the language model provider to be corrected. The two cloud transcribers also upload the audio file.
 
@@ -115,7 +117,7 @@ joel check talk.m4a --show-uncertain
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--transcriber` | `parakeet` | Picks the speech-to-text model: `parakeet`, `elevenlabs`, or `openai` |
-| `--model` | `openai:gpt-6-luna` | Picks the language model, as a [Pydantic AI](https://ai.pydantic.dev/) model string |
+| `--model` | `openai-codex:gpt-6.1-terra` | Picks the language model, as a [Pydantic AI](https://ai.pydantic.dev/) model string |
 | `--min-confidence` | `0.67` | How sure the transcription must be about a word before a mistake on it is reported |
 | `--show-uncertain` | off | Shows the mistakes that fell below that bar, marked as uncertain |
 | `--block-sentences` | `7` | How many sentences go to the language model in each call. Fewer means more calls and a higher cost |
@@ -140,7 +142,7 @@ Before you send a long recording through a paid model, you can ask what it would
 ```
 $ joel estimate talk.m4a
 talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
-openai:gpt-6-luna: about $0.008 for 36 calls (28686 input and 10968 output tokens)
+openai-codex:gpt-6.1-terra: about $0.059 for 36 calls (28686 input and 6024 output tokens)
 Assumes 150 words per minute, 12 words per sentence and 7 sentences per call, with no prompt caching; a retried call costs extra.
 ```
 

@@ -128,7 +128,7 @@ def test_estimate_reports_duration_words_and_cost(
     out = capsys.readouterr().out
     assert status == 0
     assert "1:00 of audio, about 150 words in 13 sentences" in out
-    assert "openai:gpt-6-luna: " in out
+    assert "openai-codex:gpt-6.1-terra: about $" in out
     assert "for 4 calls" in out
     assert (
         "Assumes 150 words per minute, 12 words per sentence and 7 sentences per "
@@ -174,7 +174,9 @@ def test_a_cost_below_a_tenth_of_a_cent_says_so(
 ) -> None:
     fake_ffmpeg("exec /usr/bin/head -c 64000 /dev/zero")  # one second
 
-    status = main(["estimate", str(tmp_path / "talk.m4a")])
+    status = main(
+        ["estimate", str(tmp_path / "talk.m4a"), "--model", "openai:gpt-6-luna"]
+    )
 
     assert status == 0
     assert "openai:gpt-6-luna: under $0.001 for 2 calls" in capsys.readouterr().out
