@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 import errant  # type: ignore[import-untyped]
+import spacy
 from errant.annotator import Annotator  # type: ignore[import-untyped]
 from errant.edit import Edit as ErrantEdit  # type: ignore[import-untyped]
 from pydantic import BaseModel
 from spacy.tokens import Doc
 
+from joel.spacy_model import resolve_spacy_model
 from joel.transcript import Word
 
 Category = Literal["grammar", "naturalness"]
@@ -40,8 +42,12 @@ class _Span:
 
 
 def load_annotator() -> Annotator:
-    """Load ERRANT for English. It loads spaCy's en_core_web_sm, so call it once."""
-    return errant.load("en")
+    """Load ERRANT for English on the pinned en_core_web_sm.
+
+    The model is downloaded on first use, so call this once.
+    """
+    nlp = spacy.load(resolve_spacy_model(), disable=["ner"])
+    return errant.load("en", nlp=nlp)
 
 
 def diff_edits(

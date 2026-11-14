@@ -535,6 +535,32 @@ def test_audio_ffmpeg_cannot_read_is_an_error(
     assert capsys.readouterr().err.startswith("joel: error: ffmpeg could not read")
 
 
+def test_a_spacy_model_it_cannot_download_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class NeverTranscribes(FakeTranscriber):
+        def transcribe(self, audio: Path) -> Transcript:
+            raise AssertionError("transcribed before loading the spaCy model")
+
+    monkeypatch.setattr("joel.cli.infer_model", lambda name: PipelineModel().model)
+    monkeypatch.setattr(
+        "joel.cli.load_transcriber", lambda name: NeverTranscribes(name, [])
+    )
+    # As after `uv tool install joel`, offline: no package, no cache, no server.
+    monkeypatch.setattr("joel.spacy_model.SPACY_MODEL_PACKAGE", "joel_no_such_model")
+    monkeypatch.setattr(
+        "joel.spacy_model.SPACY_MODEL_URL", "http://127.0.0.1:9/en_core_web_sm.whl"
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+
+    assert main(["check", str(audio)]) == 1
+    assert capsys.readouterr().err.startswith(
+        "joel: error: Could not get spaCy's en_core_web_sm model"
+    )
+
+
 def test_an_unknown_transcriber_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

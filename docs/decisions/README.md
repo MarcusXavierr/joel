@@ -17,6 +17,7 @@ An accepted ADR is immutable. When a decision changes, do not edit the old recor
 | [0009](0009-cache-the-instructions-and-warm-up-each-step.md) | Cache each step's tool schema and instructions, with worked examples past the minimum, and run each step's first block alone to write the cache | accepted |
 | [0010](0010-default-model-chosen-by-precision-probe.md) | `openai:gpt-6-luna` as the default model and 7 as the default block size, chosen by a precision probe over 7 models | superseded by 0011 |
 | [0011](0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md) | `openai-codex:gpt-6.1-terra` as the default model, run on the ChatGPT plan through the Codex CLI's login | accepted |
+| [0012](0012-download-the-spacy-model-on-first-use.md) | Download the pinned `en_core_web_sm` 3.8.0 from spaCy's GitHub release on first use, checked by sha256, so Joel installs from PyPI | accepted |
 
 ## Adding one
 
