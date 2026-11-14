@@ -1,12 +1,18 @@
 """The ``joel`` command."""
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+from pydantic_ai.exceptions import ModelAPIError, UserError
+from pydantic_ai.models import infer_model
+
 from joel.bench import BenchInputError, load_recordings, render_run, run_bench
+from joel.check import run_check
+from joel.confidence import MIN_CONFIDENCE
 from joel.cost import (
     SPEAKING_RATE_WPM,
     WORDS_PER_SENTENCE,
@@ -14,8 +20,11 @@ from joel.cost import (
     estimate_cost,
 )
 from joel.decode import SAMPLE_RATE, DecodeError, decode
-from joel.llm import DEFAULT_MODEL
+from joel.edits import load_annotator
+from joel.llm import DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
+from joel.report import render
+from joel.transcribers import TranscriberUnavailableError, load_transcriber
 
 BYTES_PER_SAMPLE = 4  # float32
 
@@ -29,6 +38,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
+
+    check = commands.add_parser(
+        "check",
+        help="Report every grammar mistake in a recording, with when you said it.",
+    )
+    check.add_argument("audio", type=Path, help="recording in any format ffmpeg reads")
+    check.add_argument(
+        "--transcriber",
+        default="parakeet",
+        help="speech-to-text model: parakeet, elevenlabs or openai (default: parakeet)",
+    )
+    check.add_argument(
+        "--model", default=DEFAULT_MODEL, help="Pydantic AI model string"
+    )
+    check.add_argument(
+        "--min-confidence",
+        type=_probability,
+        default=MIN_CONFIDENCE,
+        metavar="P",
+        help="hide mistakes on words heard with less confidence than this "
+        f"(default: {MIN_CONFIDENCE})",
+    )
+    check.add_argument(
+        "--show-uncertain",
+        action="store_true",
+        help="also show the mistakes held back as uncertain",
+    )
+    check.add_argument(
+        "--json", action="store_true", help="print everything the run decided as JSON"
+    )
+    check.set_defaults(run=_check)
 
     bench = commands.add_parser(
         "bench", help="Measure which transcriber keeps your grammar mistakes."
@@ -63,6 +103,51 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging()
     run: Callable[[argparse.Namespace], int] = args.run
     return run(args)
+
+
+def _probability(text: str) -> float:
+    try:
+        p: float | None = float(text)
+    except ValueError:
+        p = None
+    if p is None or not 0 <= p <= 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number between 0 and 1")
+    return p
+
+
+def _check(args: argparse.Namespace) -> int:
+    audio: Path = args.audio
+    if not audio.is_file():
+        print(f"joel: error: {audio} is not a file.", file=sys.stderr)
+        return 1
+    try:
+        # infer_model fails here on a missing API key, before any transcription.
+        model = infer_model(args.model)
+        transcriber = load_transcriber(args.transcriber)
+        result = asyncio.run(
+            run_check(
+                audio,
+                transcriber,
+                model=model,
+                model_name=args.model,
+                min_confidence=args.min_confidence,
+                annotator=load_annotator(),
+            )
+        )
+    except (
+        UserError,
+        TranscriberUnavailableError,
+        DecodeError,
+        ModelAnswerError,
+        ModelAPIError,
+    ) as exc:
+        print(f"joel: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(render(result, show_uncertain=args.show_uncertain))
+    return 0
 
 
 def _bench(args: argparse.Namespace) -> int:

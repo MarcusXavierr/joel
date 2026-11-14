@@ -5,9 +5,9 @@
 Joel is a command-line tool for people who speak English as a second language. You give it a recording of yourself talking. It tells you which sentences had a grammar mistake, when in the recording you said them, and what you should have said.
 
 > [!IMPORTANT]
-> Joel is at an early stage. `joel bench` and `joel estimate` work; `joel check`, the command that reports your mistakes, doesn't exist yet. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). This README describes the tool as designed, so details may still move.
+> Joel is at an early stage. `joel check`, `joel bench`, and `joel estimate` all work, but they have only been tried on short test recordings. The repo holds the [design](docs/plans/2026-11-13-joel-design.md), the [decisions](docs/decisions/README.md) behind it, and a [backlog of seven tickets](https://github.com/MarcusXavierr/joel/issues/8). Details may still move.
 
-## What a report will look like
+## What a report looks like
 
 ```
 $ joel check talk.m4a
@@ -20,11 +20,14 @@ $ joel check talk.m4a
 00:41.0–00:41.6  naturalness
   said:    I make a party last week.
   better:  I threw a party last week.
+           make → threw
+
+Cost: $0.02 for 6 model calls (3204 input and 144 output tokens) with anthropic:claude-opus-5-5.
 ```
 
-Each entry starts with where to find the sentence in the recording. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` entry is a sentence that is grammatical but that a native speaker wouldn't say that way.
+Each entry starts with where to find the sentence in the recording. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` entry is a sentence that is grammatical but that a native speaker wouldn't say that way. The `said:` line leaves out the hesitations Joel set aside, and the line under the correction shows exactly which words changed. The last line is what the language model calls cost for this recording.
 
-Joel would rather miss a mistake than invent one. A report that flags things you said correctly teaches you to ignore it, so anything the transcription was unsure about stays hidden unless you ask for it with `--show-uncertain`.
+Joel would rather miss a mistake than invent one. A report that flags things you said correctly teaches you to ignore it, so anything the transcription was unsure about stays hidden unless you ask for it with `--show-uncertain`. The report still tells you how many it hid.
 
 ## How it works
 
@@ -96,7 +99,7 @@ The SDKs for the two cloud transcribers are optional extras, installed with `uv 
 
 ## Usage
 
-`joel check` doesn't run yet. These are its commands as designed:
+`joel check` is the command you'll use most:
 
 ```bash
 # Report the mistakes in a recording
@@ -115,7 +118,7 @@ joel check talk.m4a --show-uncertain
 | `--model` | `anthropic:claude-opus-5-5` | Picks the language model, as a [Pydantic AI](https://ai.pydantic.dev/) model string |
 | `--min-confidence` | `0.67` | How sure the transcription must be about a word before a mistake on it is reported |
 | `--show-uncertain` | off | Shows the mistakes that fell below that bar, marked as uncertain |
-| `--json` | off | Prints everything as JSON: the transcript, the corrections, and every mistake with the reason it was kept or dropped |
+| `--json` | off | Prints everything as JSON: the transcript, the corrections, every mistake with the reason it was kept or held back, and the tokens and cost of the run. The terminal report can be rebuilt from it |
 
 There is a second command, for finding out which transcriber to trust:
 
