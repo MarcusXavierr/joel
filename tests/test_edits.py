@@ -1,7 +1,7 @@
 import pytest
 from errant.annotator import Annotator  # type: ignore[import-untyped]
 
-from joel.edits import Edit, diff_edits
+from joel.edits import Edit, diff_edits, natural_problem
 from joel.transcript import Word
 
 
@@ -228,3 +228,64 @@ def test_naturalness_insertion_away_from_grammar_edits_is_kept(
 
 def test_empty_sentence_has_no_edits(annotator: Annotator) -> None:
     assert diff_edits([], "", "", annotator) == []
+
+
+def test_without_a_natural_version_there_are_only_grammar_edits(
+    annotator: Annotator,
+) -> None:
+    clean = words("There is many people in the room.")
+
+    edits = diff_edits(clean, "There are many people in the room.", None, annotator)
+
+    assert [(e.category, e.original) for e in edits] == [("grammar", "is")]
+
+
+def swap(original: str, correction: str, kind: str = "R:OTHER") -> Edit:
+    return Edit(
+        category="naturalness",
+        type=kind,
+        original=original,
+        correction=correction,
+        words=[0],
+    )
+
+
+@pytest.mark.parametrize(
+    "edits",
+    [
+        [],
+        [swap("make", "throw")],
+        [swap("said a lie", "told a lie"), swap("many", "a lot of")],
+    ],
+    ids=["none", "one word", "two swaps of three words"],
+)
+def test_word_swaps_are_natural(edits: list[Edit]) -> None:
+    assert natural_problem(edits) is None
+
+
+def test_natural_may_only_replace_words() -> None:
+    edits = [swap("really", "", "U:ADV"), swap("", "then", "M:ADV")]
+
+    assert natural_problem(edits) == (
+        'natural adds or removes words ("really → ∅"); only replace words. '
+        'natural adds or removes words ("∅ → then"); only replace words.'
+    )
+
+
+@pytest.mark.parametrize(
+    ("original", "correction"),
+    [("a lot of things", "much"), ("much", "a lot of things")],
+)
+def test_natural_replaces_at_most_three_words_at_a_time(
+    original: str, correction: str
+) -> None:
+    assert natural_problem([swap(original, correction)]) == (
+        f'natural replaces "{original}" with "{correction}"; '
+        "replace at most 3 words at a time."
+    )
+
+
+def test_natural_changes_at_most_two_places() -> None:
+    edits = [swap("make", "throw"), swap("big", "large"), swap("say", "tell")]
+
+    assert natural_problem(edits) == "natural changes 3 places; change at most 2."

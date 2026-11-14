@@ -31,6 +31,11 @@ SPECS: tuple[PromptSpec, ...] = (
         "$natural marks where correct-natural goes",
         frozenset({"natural"}),
     ),
+    PromptSpec(
+        "correct-natural",
+        "asks for the natural version too; used only with --better",
+        frozenset(),
+    ),
 )
 NAMES: tuple[str, ...] = tuple(s.name for s in SPECS)
 
@@ -56,8 +61,10 @@ def builtin(name: str) -> str:
 def load_prompts(overrides: Mapping[str, Path], *, better: bool) -> Prompts:
     """Read every prompt, from its override file when given, and fill it in.
 
-    Raises PromptError when a file can't be read or has a placeholder its
-    prompt doesn't allow.
+    With `better`, the correct-natural prompt goes where the correct prompt
+    says $natural; otherwise $natural is left empty. Raises PromptError when a
+    file can't be read, has a placeholder its prompt doesn't allow, or, with
+    `better`, the correct prompt has no $natural.
     """
     templates = {}
     hashes = {}
@@ -79,18 +86,25 @@ def load_prompts(overrides: Mapping[str, Path], *, better: bool) -> Prompts:
             raise PromptError(
                 f"{source}: a $ that starts no placeholder; write $$ for a literal $."
             )
-        for found in template.get_identifiers():
-            if found not in spec.placeholders:
+        found = template.get_identifiers()
+        for name in found:
+            if name not in spec.placeholders:
                 allowed = ", ".join(f"${p}" for p in sorted(spec.placeholders))
                 raise PromptError(
-                    f"{source}: unknown placeholder ${found}; "
+                    f"{source}: unknown placeholder ${name}; "
                     f"the {spec.name} prompt allows {allowed or 'none'}."
                 )
+        if better and spec.name == "correct" and "natural" not in found:
+            raise PromptError(
+                f"{source}: --better needs $natural in the correct prompt, "
+                "where the correct-natural prompt goes."
+            )
         templates[spec.name] = template
         hashes[spec.name] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    natural = templates["correct-natural"].substitute().strip() if better else ""
     return Prompts(
         disfluencies=templates["disfluencies"].substitute().strip(),
-        correct=templates["correct"].substitute(natural="").strip(),
+        correct=templates["correct"].substitute(natural=natural).strip(),
         hashes=hashes,
     )
 

@@ -29,6 +29,9 @@ CLEANUP_INPUT = TokenRate(473, 6.4)
 CLEANUP_OUTPUT = TokenRate(17, 0.1)
 CORRECT_INPUT = TokenRate(479, 1.3)
 CORRECT_OUTPUT = TokenRate(26, 3.4)
+# The correction step when --better also asks for the natural version.
+CORRECT_NATURAL_INPUT = CORRECT_INPUT
+CORRECT_NATURAL_OUTPUT = CORRECT_OUTPUT
 
 
 class PriceUnavailableError(Exception):
@@ -122,16 +125,23 @@ def estimate_cost(
     audio_seconds: float,
     model: str = DEFAULT_MODEL,
     block_sentences: int = BLOCK_SENTENCES,
+    *,
+    better: bool = False,
 ) -> CostEstimate:
-    """Estimate the LLM cost from the audio's duration alone. Retries aren't counted."""
+    """Estimate the LLM cost from the audio's duration alone. Retries aren't counted.
+
+    With `better`, the corrections also write the natural version.
+    """
     words = math.ceil(audio_seconds / 60 * SPEAKING_RATE_WPM)
     sentences = math.ceil(words / WORDS_PER_SENTENCE)
     blocks = math.ceil(sentences / block_sentences)
-    input_tokens = blocks * (CLEANUP_INPUT.base + CORRECT_INPUT.base) + round(
-        words * (CLEANUP_INPUT.per_word + CORRECT_INPUT.per_word)
+    correct_input = CORRECT_NATURAL_INPUT if better else CORRECT_INPUT
+    correct_output = CORRECT_NATURAL_OUTPUT if better else CORRECT_OUTPUT
+    input_tokens = blocks * (CLEANUP_INPUT.base + correct_input.base) + round(
+        words * (CLEANUP_INPUT.per_word + correct_input.per_word)
     )
-    output_tokens = blocks * (CLEANUP_OUTPUT.base + CORRECT_OUTPUT.base) + round(
-        words * (CLEANUP_OUTPUT.per_word + CORRECT_OUTPUT.per_word)
+    output_tokens = blocks * (CLEANUP_OUTPUT.base + correct_output.base) + round(
+        words * (CLEANUP_OUTPUT.per_word + correct_output.per_word)
     )
     calls = 2 * blocks  # one cleanup and one correction per block
     return CostEstimate(

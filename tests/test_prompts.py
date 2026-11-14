@@ -17,7 +17,44 @@ def test_the_built_in_prompts_are_used_and_hashed() -> None:
 
     assert prompts.disfluencies == builtin("disfluencies").strip()
     assert prompts.correct.startswith("You correct transcribed speech")
+    assert "natural:" not in prompts.correct
     assert prompts.hashes == {name: sha256(builtin(name)) for name in NAMES}
+    assert set(NAMES) == {"disfluencies", "correct", "correct-natural"}
+
+
+def test_better_puts_the_natural_prompt_where_correct_says(tmp_path: Path) -> None:
+    mine = tmp_path / "mine.md"
+    mine.write_text("Fix the grammar.\n$natural\nKeep the rest.\n")
+    natural = tmp_path / "natural.md"
+    natural.write_text("natural: swap odd words.\n")
+
+    prompts = load_prompts({"correct": mine, "correct-natural": natural}, better=True)
+
+    assert prompts.correct == (
+        "Fix the grammar.\nnatural: swap odd words.\nKeep the rest."
+    )
+    assert prompts.hashes["correct-natural"] == sha256("natural: swap odd words.\n")
+
+
+def test_the_built_in_correct_prompt_asks_for_natural_only_with_better() -> None:
+    natural = builtin("correct-natural").strip()
+
+    assert natural in load_prompts({}, better=True).correct
+    assert natural not in load_prompts({}, better=False).correct
+
+
+def test_better_needs_a_place_for_the_natural_prompt(tmp_path: Path) -> None:
+    mine = tmp_path / "mine.md"
+    mine.write_text("Fix the grammar.\n")
+
+    assert load_prompts({"correct": mine}, better=False).correct == "Fix the grammar."
+    with pytest.raises(PromptError) as raised:
+        load_prompts({"correct": mine}, better=True)
+
+    assert str(raised.value) == (
+        f"{mine}: --better needs $natural in the correct prompt, "
+        "where the correct-natural prompt goes."
+    )
 
 
 def test_a_file_replaces_its_built_in_prompt(tmp_path: Path) -> None:

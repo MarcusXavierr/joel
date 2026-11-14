@@ -119,6 +119,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     estimate.add_argument(
         "--model", default=DEFAULT_MODEL, help="Pydantic AI model string"
     )
+    estimate.add_argument(
+        "--better", action="store_true", help="price the natural version too"
+    )
     estimate.set_defaults(run=_estimate)
 
     prompt = commands.add_parser(
@@ -217,6 +220,7 @@ def _check(args: argparse.Namespace) -> int:
                 annotator=load_annotator(),
                 block_sentences=args.block_sentences,
                 prompts=prompts,
+                better=args.better,
             )
         )
     except (
@@ -266,13 +270,13 @@ def _estimate(args: argparse.Namespace) -> int:
     audio: Path = args.audio
     model: str = args.model
     try:
-        load_prompts(dict(args.prompts or []), better=False)
+        load_prompts(dict(args.prompts or []), better=args.better)
     except PromptError as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
     try:
         seconds = len(decode(audio)) / (BYTES_PER_SAMPLE * SAMPLE_RATE)
-        cost = estimate_cost(seconds, model, args.block_sentences)
+        cost = estimate_cost(seconds, model, args.block_sentences, better=args.better)
     except (DecodeError, PriceUnavailableError) as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1

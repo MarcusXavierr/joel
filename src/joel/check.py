@@ -16,7 +16,7 @@ from joel.confidence import FilteredEdit, filter_edits
 from joel.correct import Correction, correct
 from joel.cost import PriceUnavailableError, price
 from joel.disfluencies import CleanSentence, strip_disfluencies
-from joel.edits import diff_edits
+from joel.edits import diff_edits, natural_problem
 from joel.prompts import Prompts
 from joel.sentences import split_sentences
 from joel.transcribers import Transcriber
@@ -60,6 +60,7 @@ async def run_check(
     annotator: Annotator,
     block_sentences: int,
     prompts: Prompts,
+    better: bool,
 ) -> CheckResult:
     """Transcribe `audio` and run every later step over it.
 
@@ -67,7 +68,8 @@ async def run_check(
     cleanup first, then every correction. Each step runs its first block alone,
     so the rest read the prompt cache it writes; then at most
     MAX_CONCURRENT_CALLS at a time. The first call that fails raises its error
-    as is. `model_name` is what gets priced and recorded.
+    as is. `model_name` is what gets priced and recorded. Only with `better`
+    does the model write a natural version, held to word swaps.
     """
     transcript = transcriber.transcribe(audio)
     by_index = {w.index: w for w in transcript.words}
@@ -106,6 +108,11 @@ async def run_check(
 
     # A block is the positions of its sentences among the spoken ones.
     async def fix(block: tuple[int, ...]) -> list[Correction]:
+        def review(k: int, grammatical: str, natural: str) -> str | None:
+            words = cleaned[spoken[block[k]]].words
+            edits = diff_edits(words, grammatical, natural, annotator)
+            return natural_problem([e for e in edits if e.category == "naturalness"])
+
         async with limit:
             return await correct(
                 [texts[spoken[k]] for k in block],
@@ -116,6 +123,7 @@ async def run_check(
                     else None
                 ),
                 instructions=prompts.correct,
+                review=review if better else None,
                 model=model,
                 usage=usage,
             )

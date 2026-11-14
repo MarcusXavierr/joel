@@ -17,6 +17,11 @@ from joel.transcript import Word
 
 Category = Literal["grammar", "naturalness"]
 
+# How much a natural version may change beyond the grammar fixes: words per
+# side of one replacement, and replacements per sentence (ADR-0014).
+NATURAL_MAX_WORDS = 3
+NATURAL_MAX_EDITS = 2
+
 
 class Edit(BaseModel):
     """One change between what was said and a correction of it."""
@@ -51,14 +56,18 @@ def load_annotator() -> Annotator:
 
 
 def diff_edits(
-    words: Sequence[Word], grammatical: str, natural: str, annotator: Annotator
+    words: Sequence[Word],
+    grammatical: str,
+    natural: str | None,
+    annotator: Annotator,
 ) -> list[Edit]:
     """Diff a clean sentence against its two corrections.
 
-    `words` is the sentence without the dropped words. Returns the grammar
-    edits, then the naturalness edits that touch none of them, each in ERRANT
-    order. Changes nobody can hear (punctuation, case, apostrophes, spacing,
-    homophones like "your/you're", digits against number words) are left out.
+    `words` is the sentence without the dropped words; `natural` is None when
+    the run didn't ask for it. Returns the grammar edits, then the naturalness
+    edits that touch none of them, each in ERRANT order. Changes nobody can
+    hear (punctuation, case, apostrophes, spacing, homophones like
+    "your/you're", digits against number words) are left out.
     """
     if not words:
         return []
@@ -93,10 +102,37 @@ def diff_edits(
     grammar = spans(grammatical, "grammar")
     naturalness = [
         n
-        for n in spans(natural, "naturalness")
+        for n in (spans(natural, "naturalness") if natural is not None else [])
         if not any(_overlaps(n, g) for g in grammar)
     ]
     return [s.edit for s in grammar + naturalness]
+
+
+def natural_problem(edits: Sequence[Edit]) -> str | None:
+    """What makes one sentence's naturalness edits more than word swaps, or None.
+
+    A natural version may only replace a few words in a few places: anything
+    else is a rewrite, which the report would show as the speaker's mistake.
+    """
+    if len(edits) > NATURAL_MAX_EDITS:
+        return (
+            f"natural changes {len(edits)} places; change at most {NATURAL_MAX_EDITS}."
+        )
+    problems = []
+    for edit in edits:
+        if not edit.type.startswith("R:"):
+            change = f"{edit.original or '∅'} → {edit.correction or '∅'}"
+            problems.append(
+                f'natural adds or removes words ("{change}"); only replace words.'
+            )
+        elif max(len(edit.original.split()), len(edit.correction.split())) > (
+            NATURAL_MAX_WORDS
+        ):
+            problems.append(
+                f'natural replaces "{edit.original}" with "{edit.correction}"; '
+                f"replace at most {NATURAL_MAX_WORDS} words at a time."
+            )
+    return " ".join(problems) or None
 
 
 def _token_words(words: Sequence[Word], doc: Doc) -> list[int]:
