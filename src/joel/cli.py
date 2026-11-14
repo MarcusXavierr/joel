@@ -4,9 +4,9 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Callable, Sequence
-from decimal import Decimal
 from pathlib import Path
 
+import pydantic_ai
 from pydantic_ai.exceptions import ModelAPIError, UserError
 from pydantic_ai.models import infer_model
 
@@ -17,11 +17,12 @@ from joel.cost import (
     SPEAKING_RATE_WPM,
     WORDS_PER_SENTENCE,
     PriceUnavailableError,
+    dollars,
     estimate_cost,
 )
 from joel.decode import SAMPLE_RATE, DecodeError, decode
 from joel.edits import load_annotator
-from joel.llm import DEFAULT_MODEL, ModelAnswerError
+from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
 from joel.report import render
 from joel.transcribers import TranscriberUnavailableError, load_transcriber
@@ -99,7 +100,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     estimate.set_defaults(run=_estimate)
 
+    for command in (check, estimate):
+        command.add_argument(
+            "--block-sentences",
+            type=_positive_int,
+            default=BLOCK_SENTENCES,
+            metavar="N",
+            help=f"sentences per language model call (default: {BLOCK_SENTENCES})",
+        )
+
     args = parser.parse_args(argv)
+    # joel owns stdout and stderr; pydantic-ai's first-run banner would land in
+    # the report.
+    pydantic_ai.BANNER_ENABLED = False
     configure_logging()
     run: Callable[[argparse.Namespace], int] = args.run
     return run(args)
@@ -113,6 +126,18 @@ def _probability(text: str) -> float:
     if p is None or not 0 <= p <= 1:
         raise argparse.ArgumentTypeError(f"{text!r} is not a number between 0 and 1")
     return p
+
+
+def _positive_int(text: str) -> int:
+    try:
+        n: int | None = int(text)
+    except ValueError:
+        n = None
+    if n is None or n < 1:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a whole number of at least 1"
+        )
+    return n
 
 
 def _check(args: argparse.Namespace) -> int:
@@ -132,6 +157,7 @@ def _check(args: argparse.Namespace) -> int:
                 model_name=args.model,
                 min_confidence=args.min_confidence,
                 annotator=load_annotator(),
+                block_sentences=args.block_sentences,
             )
         )
     except (
@@ -172,12 +198,14 @@ def _estimate(args: argparse.Namespace) -> int:
     model: str = args.model
     try:
         seconds = len(decode(audio)) / (BYTES_PER_SAMPLE * SAMPLE_RATE)
-        cost = estimate_cost(seconds, model)
+        cost = estimate_cost(seconds, model, args.block_sentences)
     except (DecodeError, PriceUnavailableError) as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
     minutes, secs = divmod(round(seconds), 60)
-    money = "under $0.01" if cost.usd < Decimal("0.01") else f"about ${cost.usd:.2f}"
+    money = dollars(cost.usd)
+    if money.startswith("$"):
+        money = f"about {money}"
     print(
         f"{audio}: {minutes}:{secs:02d} of audio, "
         f"about {cost.words} words in {cost.sentences} sentences"
@@ -186,8 +214,10 @@ def _estimate(args: argparse.Namespace) -> int:
         f"{model}: {money} for {cost.calls} calls "
         f"({cost.input_tokens} input and {cost.output_tokens} output tokens)"
     )
+    per_call = "sentence" if args.block_sentences == 1 else "sentences"
     print(
-        f"Assumes {SPEAKING_RATE_WPM} words per minute and {WORDS_PER_SENTENCE} "
-        "words per sentence; a retried call costs extra."
+        f"Assumes {SPEAKING_RATE_WPM} words per minute, {WORDS_PER_SENTENCE} "
+        f"words per sentence and {args.block_sentences} {per_call} per call, "
+        "with no prompt caching; a retried call costs extra."
     )
     return 0

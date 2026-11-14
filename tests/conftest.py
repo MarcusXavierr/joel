@@ -17,6 +17,12 @@ from pydantic_ai.usage import RequestUsage
 from joel.edits import load_annotator
 
 
+@pytest.fixture(autouse=True)
+def logged_out_of_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the Codex login at an empty directory, so no test reads the real one."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
