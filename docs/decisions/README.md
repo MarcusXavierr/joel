@@ -10,7 +10,7 @@ An accepted ADR is immutable. When a decision changes, do not edit the old recor
 | [0002](0002-parakeet-ultra-as-default-local-transcriber.md) | Parakeet Ultra via `transcribe-cpp` as the default local ASR, pending the bench | proposed |
 | [0003](0003-llm-corrects-errant-extracts-edits.md) | The LLM writes the corrected sentence; ERRANT extracts typed edits | accepted |
 | [0004](0004-disfluency-cleanup-via-llm-returned-indices.md) | Disfluency cleanup with the LLM returning only indices to drop | accepted |
-| [0005](0005-naturalness-as-second-correction-target.md) | Naturalness as a second target in the same call, separate from grammar | accepted |
+| [0005](0005-naturalness-as-second-correction-target.md) | Naturalness as a second target in the same call, separate from grammar; asked for only with `--better` since 0014 | accepted |
 | [0006](0006-spacy-tokenization-with-offset-mapping.md) | spaCy tokenization in ERRANT, mapped to ASR words by character offset | accepted |
 | [0007](0007-word-timestamps-optional-in-transcriber-contract.md) | Word timestamps optional in the `Word` contract, so `gpt-transcribe` fits behind the interface | accepted |
 | [0008](0008-llm-steps-run-over-blocks-of-sentences.md) | Cleanup and correction run over numbered blocks of up to N sentences per call (`--block-sentences`; default 6, moved to 7 by 0010) | accepted |

@@ -18,9 +18,9 @@ $ joel check talk.m4a --better
            00:12.4  is → are  R:VERB:SVA   grammar
 
 00:40.6–00:42.0
-  said:    I make a party last week.
+  said:    I made a party last week.
   better:  I threw a party last week.
-           00:41.0  make → threw  naturalness
+           00:41.0  made → threw  naturalness
 
 Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
@@ -171,9 +171,9 @@ joel prompt correct > mine.md
 joel check talk.m4a --prompt correct=mine.md
 ```
 
-The built-in `correct` prompt has a line that says only `$natural`. That is where `correct-natural` goes when you pass `--better`, and where nothing goes when you don't. Keep it in your file if you want `--better` to work; without it, Joel stops with an error before transcribing anything. Any other `$` word is an error too, and `$$` writes a literal `$`. The JSON report records a SHA-256 hash of every prompt a run used, so you can tell which text produced it.
+The built-in `correct` prompt has a line that says only `$natural`. That is where `correct-natural` goes when you pass `--better`, and where nothing goes when you don't. Keep it in your file if you want `--better` to work; without it, Joel stops with an error before transcribing anything. Any other `$` word is an error too, and `$$` writes a literal `$`. The JSON report records a SHA-256 hash of every prompt the run loaded, sent or not, so you can tell which text produced it.
 
-Everything measured about Joel, from the model probes in the decision records to the token rates `joel estimate` uses, was measured with the built-in prompts. Your file can make the report better or worse, and the estimate says so when you pass `--prompt`.
+The token rates `joel estimate` uses and the naturalness probe in [ADR-0014](docs/decisions/0014-naturalness-only-on-request-held-to-word-swaps.md) were measured with the built-in prompts. The grammar probes in the earlier decision records ran on an older version of the `correct` prompt and haven't been rerun. Your file can make the report better or worse, and the estimate says so when you pass `--prompt`.
 
 ## Using Joel from another program
 

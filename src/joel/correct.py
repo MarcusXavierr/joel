@@ -8,13 +8,13 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
-from joel.llm import DEFAULT_MODEL, ask
+from joel.llm import DEFAULT_MODEL, ModelAnswerError, ask
 
 _RETRIES = 1
 
-# Looks at the natural version of the sentence at a 0-based position in the
-# block, next to its grammatical one; returns what is wrong with it, or None.
-Review = Callable[[int, str, str], str | None]
+# Looks at a sentence's natural version next to its grammatical one; returns
+# what is wrong with it, or None.
+Review = Callable[[str, str], str | None]
 
 
 class Correction(BaseModel):
@@ -43,10 +43,13 @@ class _NaturalBlock(BaseModel):
     sentences: list[_NumberedNatural]
 
 
-@dataclass(frozen=True)
+@dataclass
 class _NaturalDeps:
     count: int  # how many sentences the block holds
     review: Review
+    # The first numbered answer with its rejected natural versions dropped,
+    # kept in case the retry they caused fails.
+    fallback: _NaturalBlock | None = None
 
 
 # One agent per output schema, so a run that doesn't ask for the natural
@@ -79,25 +82,28 @@ def _natural_only_swaps_words(
     """Send a rejected natural version back once; after that, drop it.
 
     A run never fails over naturalness: a natural version still rejected on
-    the last try becomes its grammatical one.
+    the last try becomes its grammatical one, and `correct` falls back to the
+    first answer if the retry fails for another reason.
     """
     _check_numbers(ctx.deps.count, [s.number for s in answer.sentences])
     problems = [
         (k, problem)
         for k, s in enumerate(answer.sentences)
-        if (problem := ctx.deps.review(k, s.grammatical, s.natural))
+        if (problem := ctx.deps.review(s.grammatical, s.natural))
     ]
     if not problems:
         return answer
+    kept = answer.model_copy(deep=True)
+    for k, _ in problems:
+        sentence = kept.sentences[k]
+        sentence.natural = sentence.grammatical
     if ctx.retry < ctx.max_retries:
+        ctx.deps.fallback = kept
         raise ModelRetry(
             "Fix natural in these sentences and change nothing else:\n"
             + "\n".join(f"Sentence {k + 1}: {problem}" for k, problem in problems)
         )
-    for k, _ in problems:
-        sentence = answer.sentences[k]
-        sentence.natural = sentence.grammatical
-    return answer
+    return kept
 
 
 async def correct(
@@ -139,15 +145,21 @@ async def correct(
             Correction(grammatical=s.grammatical, natural=None)
             for s in answer.sentences
         ]
-    natural = await ask(
-        _natural_agent,
-        prompt,
-        instructions=instructions,
-        deps=_NaturalDeps(len(sentences), review),
-        model=model,
-        usage=usage,
-        text=text,
-    )
+    deps = _NaturalDeps(len(sentences), review)
+    try:
+        natural = await ask(
+            _natural_agent,
+            prompt,
+            instructions=instructions,
+            deps=deps,
+            model=model,
+            usage=usage,
+            text=text,
+        )
+    except ModelAnswerError:
+        if deps.fallback is None:
+            raise
+        natural = deps.fallback
     return [
         Correction(grammatical=s.grammatical, natural=s.natural)
         for s in natural.sentences

@@ -611,9 +611,9 @@ def _retry_text(messages: list[ModelMessage]) -> str:
 
 
 async def _check_one(
-    said: str, natural: str, annotator: Annotator
+    said: str, natural: str, annotator: Annotator, grammatical: str | None = None
 ) -> tuple[CheckResult, list[list[ModelMessage]]]:
-    """Run --better over one sentence the model leaves grammatical as is."""
+    """Run --better over one sentence; the model leaves it as is unless told."""
     corrections: list[list[ModelMessage]] = []
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -621,7 +621,8 @@ async def _check_one(
         if "drop" in tool.parameters_json_schema["properties"]:
             return ModelResponse(parts=[ToolCallPart(tool.name, {"drop": []})])
         corrections.append(messages)
-        item = {"number": 1, "grammatical": said, "natural": natural}
+        fixed = said if grammatical is None else grammatical
+        item = {"number": 1, "grammatical": fixed, "natural": natural}
         return ModelResponse(parts=[ToolCallPart(tool.name, {"sentences": [item]})])
 
     result = await run_check(
@@ -659,6 +660,27 @@ async def test_a_rewrite_dressed_up_as_naturalness_never_reaches_the_report(
 
 
 @pytest.mark.anyio
+async def test_a_rewrite_next_to_a_grammar_fix_is_sent_back_too(
+    annotator: Annotator,
+) -> None:
+    # Against what was said, the added "quickly" overlaps the go → went fix
+    # and would vanish from the naturalness edits, yet still sit in `better:`.
+    said = "Yesterday he go to the market and I take a decision."
+    grammatical = "Yesterday he went to the market and I took a decision."
+    natural = "Yesterday he quickly went to the supermarket and I made a decision."
+
+    result, corrections = await _check_one(said, natural, annotator, grammatical)
+
+    assert len(corrections) == 2
+    assert _retry_text(corrections[1]).startswith(
+        "Fix natural in these sentences and change nothing else:\nSentence 1: "
+    )
+    sentence = build_report(result).sentences[0]
+    assert sentence.better == grammatical
+    assert [m.category for m in sentence.mistakes] == ["grammar", "grammar"]
+
+
+@pytest.mark.anyio
 async def test_a_word_swap_is_naturalness_on_the_first_answer(
     annotator: Annotator,
 ) -> None:
@@ -674,51 +696,6 @@ async def test_a_word_swap_is_naturalness_on_the_first_answer(
     assert [
         (m.category, m.original, m.correction) for m in report.sentences[0].mistakes
     ] == [("naturalness", "said", "told")]
-
-
-@pytest.mark.anyio
-async def test_each_natural_version_is_judged_against_its_own_sentence(
-    annotator: Annotator,
-) -> None:
-    # "Uh." empties the first sentence, so block positions, spoken positions
-    # and sentence numbers all differ. The last sentence's natural version adds
-    # words; judged against "He go home." instead, every change would hide
-    # behind that sentence's grammar edits and pass.
-    words = unscored("Uh.", "He", "go", "home.", "She", "said", "a", "lie.")
-    corrections: list[str] = []
-
-    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        tool = info.output_tools[0]
-        prompt = user_prompt(messages)
-        if "drop" in tool.parameters_json_schema["properties"]:
-            answer: dict[str, object] = {"drop": _disfluencies(json.loads(prompt))}
-        else:
-            corrections.append(prompt)
-            if "1. He go home." in prompt:
-                grammatical = natural = "He goes home."
-            else:
-                grammatical, natural = "She said a lie.", "She told a lie to him."
-            item = {"number": 1, "grammatical": grammatical, "natural": natural}
-            answer = {"sentences": [item]}
-        return ModelResponse(parts=[ToolCallPart(tool.name, answer)])
-
-    result = await run_check(
-        Path("talk.m4a"),
-        FakeTranscriber("local", words),
-        model=FunctionModel(respond),
-        model_name=MODEL,
-        min_confidence=0.67,
-        annotator=annotator,
-        block_sentences=1,
-        prompts=load_prompts({}, better=True),
-        better=True,
-    )
-
-    assert len(corrections) == 3  # the last sentence was sent back once
-    last = result.sentences[2]
-    assert last.correction is not None
-    assert last.correction.natural == "She said a lie."
-    assert last.edits == []
 
 
 def test_the_model_threshold_and_block_flags_reach_the_run(

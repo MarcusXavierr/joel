@@ -12,7 +12,7 @@ One criterion drives every decision: **precision over recall**. Flagging a mista
 
 **In**
 
-- `joel check <audio>`: the full pipeline, report in the terminal or as JSON.
+- `joel check <audio>`: the full pipeline, report in the terminal and, with `--json PATH`, in a JSON file.
 - `joel bench <dir>`: measures which transcribers preserve my mistakes, before trusting any of them.
 - `joel estimate <audio>`: what the LLM steps would cost for a recording, worked out from its length alone.
 - One local transcriber (Parakeet Ultra) and two cloud ones (ElevenLabs Scribe v3, OpenAI `gpt-transcribe`) behind the same interface.
@@ -63,10 +63,10 @@ flowchart LR
   D --> T[transcribe<br/>Word: text, time, confidence]
   T --> S[split_sentences]
   S --> C[strip_disfluencies<br/>LLM returns indices to drop]
-  C --> R[correct<br/>LLM returns grammatical + natural]
+  C --> R["correct<br/>LLM returns grammatical,<br/>plus natural with --better"]
   R --> E[diff_edits<br/>ERRANT]
   E --> F[filter_edits<br/>ASR confidence]
-  F --> O[render<br/>terminal or JSON]
+  F --> O[render<br/>terminal, plus JSON file]
 ```
 
 ### 0. `decode`
@@ -163,7 +163,7 @@ An answer whose numbers aren't exactly 1 to n, in order, is retried once.
 
 The minimal-edit instruction is the core of the prompt: LLMs tend to rewrite the whole sentence.
 
-With `--better`, a deterministic guard checks each natural version before the answer is accepted ([ADR-0014](../decisions/0014-naturalness-only-on-request-held-to-word-swaps.md)). It diffs the clean sentence against `grammatical` and `natural` as step 5 does and looks at the naturalness edits only. Each must be an ERRANT replacement (`R:`), with at most `NATURAL_MAX_WORDS` (3) words on either side, and a sentence may have at most `NATURAL_MAX_EDITS` (2) of them. A block with a sentence that breaks a rule goes back to the model once, with a message that names each such sentence and the rule; that is the step's only retry, shared with numbering errors. If the retry still breaks a rule, that sentence's `natural` becomes its `grammatical`, so the run never fails over naturalness.
+With `--better`, a deterministic guard checks each natural version before the answer is accepted ([ADR-0014](../decisions/0014-naturalness-only-on-request-held-to-word-swaps.md)). It diffs `grammatical` against `natural` with ERRANT, dropping the changes nobody can hear as step 5 does. Diffing against `grammatical` rather than the clean sentence matters: step 5 drops naturalness edits that overlap a grammar fix, so a word added next to a fixed verb would never show as an edit yet still be printed in `better:`. Each change must be an ERRANT replacement (`R:`), with at most `NATURAL_MAX_WORDS` (3) words on either side, and a sentence may have at most `NATURAL_MAX_EDITS` (2) of them. A block with a sentence that breaks a rule goes back to the model once, with a message that names each such sentence and the rule; that is the step's only retry, shared with numbering errors. If the retry still breaks a rule, that sentence's `natural` becomes its `grammatical`. If the retry fails for another reason, the step keeps the first answer with the rejected natural versions dropped. Either way the run never fails over naturalness.
 
 ### 5. `diff_edits` (ERRANT)
 
@@ -195,9 +195,9 @@ Terminal, from `joel check talk.m4a --better`:
            00:12.4  is → are  R:VERB:SVA   grammar
 
 00:40.6–00:42.0
-  said:    I make a party last week.
+  said:    I made a party last week.
   better:  I threw a party last week.
-           00:41.0  make → threw  naturalness
+           00:41.0  made → threw  naturalness
 
 Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
@@ -226,7 +226,7 @@ The instructions each LLM step sends live in `src/joel/prompts/` as Markdown fil
 
 Prompts are `string.Template`s. With `--better`, the `correct-natural` text goes where `correct` says `$natural`; without it, `$natural` becomes empty. `$$` is a literal `$`. The run's instructions are the filled text, stripped. `--prompt NAME=FILE` replaces one prompt for that run, and `joel prompt NAME` prints a built-in one to start from. Before anything is decoded or transcribed, the run stops with exit code 1 when a file can't be read, holds a `$` that starts no placeholder, holds a placeholder its prompt doesn't allow, or, with `--better`, is a `correct` prompt without `$natural`. An unknown `NAME` is a usage error (exit code 2). Each run records the SHA-256 of the raw text of every prompt, used or not, in the report and the full result.
 
-The probes and the token rates in `cost.py` were measured with the built-in prompts; a user's file can change both.
+The token rates in `cost.py` and ADR-0014's naturalness probe were measured with the built-in prompts. The grammar probes in ADR-0010 and ADR-0011 ran on the earlier `correct` prompt, before the natural part moved to `correct-natural`, and haven't been rerun. A user's file can change all of these.
 
 ## `joel bench`
 
@@ -297,7 +297,7 @@ Environment variables: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `OPENAI_API_KE
 | Risk | Mitigation |
 | --- | --- |
 | The ASR fixes my grammar before the LLM sees it; Parakeet already erased 3–6% of mistakes on synthetic audio | `joel bench` measures this before anything else; cross-check with a second transcriber is the fallback |
-| `strip_disfluencies` erases a real mistake: in "I am agree", dropping "am" "fixes" the sentence | Prompt restricted to fillers, repetitions, and false starts; dropped indices auditable in JSON; the bench with the LLM on (stage 2) measures it |
+| `strip_disfluencies` erases a real mistake: in "I am agree", dropping "am" "fixes" the sentence | Prompt restricted to fillers, repetitions, and false starts; dropped indices auditable in the `--json --verbose` dump; the bench with the LLM on (stage 2) measures it |
 | The LLM over-rewrites in `correct` | Minimal-edit prompt; ERRANT exposes large edits; review against the 20 sentences |
 | Scribe `logprob` comes back zeroed (seen in `scribe_v2` docs; non-zero from `scribe_v3` on one synthetic clip) | Treated as `None`; the bench reports it |
 | `gpt-transcribe` has no timestamps, and it already dropped a repeated word on synthetic audio | Its report carries no audio spans; the bench measures how much it normalizes |

@@ -58,7 +58,7 @@ def retry_message(scripted: ScriptedModel, call: int) -> str:
     )
 
 
-def no_problem(k: int, grammatical: str, natural: str) -> str | None:
+def no_problem(grammatical: str, natural: str) -> str | None:
     return None
 
 
@@ -119,10 +119,10 @@ async def test_a_natural_version_the_review_rejects_is_sent_back_once(
     scripted = scripted_model(
         with_natural(NATURAL[0], rewritten), with_natural(*NATURAL)
     )
-    seen: list[tuple[int, str, str]] = []
+    seen: list[tuple[str, str]] = []
 
-    def review(k: int, grammatical: str, natural: str) -> str | None:
-        seen.append((k, grammatical, natural))
+    def review(grammatical: str, natural: str) -> str | None:
+        seen.append((grammatical, natural))
         return "natural adds words." if natural == rewritten else None
 
     corrections = await correct(
@@ -135,7 +135,7 @@ async def test_a_natural_version_the_review_rejects_is_sent_back_once(
     )
 
     assert [c.natural for c in corrections] == NATURAL
-    assert seen[:2] == [(0, FIXED[0], NATURAL[0]), (1, FIXED[1], rewritten)]
+    assert seen[:2] == [(FIXED[0], NATURAL[0]), (FIXED[1], rewritten)]
     assert retry_message(scripted, 1) == (
         "Fix natural in these sentences and change nothing else:\n"
         "Sentence 2: natural adds words."
@@ -155,7 +155,7 @@ async def test_one_retry_names_every_rejected_natural_version(
         following=None,
         instructions=CORRECT,
         model=scripted.model,
-        review=lambda k, grammatical, natural: problems.get(natural),
+        review=lambda grammatical, natural: problems.get(natural),
     )
 
     assert [c.natural for c in corrections] == NATURAL
@@ -173,7 +173,7 @@ async def test_a_natural_version_rejected_twice_falls_back_to_grammatical(
     answer = with_natural(NATURAL[0], rewritten)
     scripted = scripted_model(answer, answer)
 
-    def review(k: int, grammatical: str, natural: str) -> str | None:
+    def review(grammatical: str, natural: str) -> str | None:
         return "natural adds words." if natural == rewritten else None
 
     corrections = await correct(
@@ -183,6 +183,29 @@ async def test_a_natural_version_rejected_twice_falls_back_to_grammatical(
         instructions=CORRECT,
         model=scripted.model,
         review=review,
+    )
+
+    assert corrections == [
+        Correction(grammatical=FIXED[0], natural=NATURAL[0]),
+        Correction(grammatical=FIXED[1], natural=FIXED[1]),
+    ]
+    assert len(scripted.calls) == 2
+
+
+async def test_a_failed_retry_after_a_rejected_natural_keeps_the_first_answer(
+    scripted_model: ScriptedModelFactory,
+) -> None:
+    rewritten = "She did not like it at all."
+    misnumbered = {"sentences": [{"number": 2, "grammatical": "x", "natural": "x"}]}
+    scripted = scripted_model(with_natural(NATURAL[0], rewritten), misnumbered)
+
+    corrections = await correct(
+        BLOCK,
+        previous=None,
+        following=None,
+        instructions=CORRECT,
+        model=scripted.model,
+        review=lambda grammatical, natural: "adds." if natural == rewritten else None,
     )
 
     assert corrections == [
@@ -245,7 +268,7 @@ async def test_a_misnumbered_answer_is_retried_once(
 @pytest.mark.parametrize("review", [None, no_problem], ids=["grammar", "natural"])
 async def test_a_second_misnumbered_answer_fails_naming_the_block(
     scripted_model: ScriptedModelFactory,
-    review: Callable[[int, str, str], str | None] | None,
+    review: Callable[[str, str], str | None] | None,
 ) -> None:
     wrong = {"sentences": [{"number": 1, "grammatical": "x", "natural": "x"}]}
     scripted = scripted_model(wrong, wrong)

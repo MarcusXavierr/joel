@@ -20,7 +20,7 @@ from joel.edits import diff_edits, natural_problem
 from joel.prompts import Prompts
 from joel.sentences import split_sentences
 from joel.transcribers import Transcriber
-from joel.transcript import Transcript
+from joel.transcript import Transcript, Word
 
 MAX_CONCURRENT_CALLS = 8
 
@@ -106,13 +106,17 @@ async def run_check(
     texts = [" ".join(w.text for w in c.words) for c in cleaned]
     spoken = [n for n, text in enumerate(texts) if text]
 
+    def review(grammatical: str, natural: str) -> str | None:
+        # Diffed against grammatical itself, so no change can hide behind a
+        # grammar fix the way it does in the report's naturalness edits.
+        words = [
+            Word(index=i, text=t, start_ms=None, end_ms=None, confidence=None)
+            for i, t in enumerate(grammatical.split())
+        ]
+        return natural_problem(diff_edits(words, grammatical, natural, annotator))
+
     # A block is the positions of its sentences among the spoken ones.
     async def fix(block: tuple[int, ...]) -> list[Correction]:
-        def review(k: int, grammatical: str, natural: str) -> str | None:
-            words = cleaned[spoken[block[k]]].words
-            edits = diff_edits(words, grammatical, natural, annotator)
-            return natural_problem([e for e in edits if e.category == "naturalness"])
-
         async with limit:
             return await correct(
                 [texts[spoken[k]] for k in block],

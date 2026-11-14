@@ -36,11 +36,11 @@ Each file holds one sentence per line. A registry, `SPECS` in `joel.prompts`, li
 ### Consequences
 
 * Good, because trying a wording is `joel prompt correct > mine.md`, an edit, and `--prompt correct=mine.md`.
-* Good, because the hashes tell two reports' prompts apart without storing the text, and they match `sha256sum` of the file.
+* Good, because the hashes tell two reports' prompts apart without storing the text, and for a file saved with Unix line endings they match `sha256sum` of the file.
 * Good, because a file that can't be read, has a `$` that starts no placeholder, or has a placeholder its prompt doesn't allow stops the run before anything is decoded, transcribed or paid for.
 * Good, because one sentence per line gives one-line diffs.
 * Bad, because a user's prompt can quietly make the report worse. The probes in ADR-0010 and ADR-0014 and the rates in `cost.py` hold only for the built-in text. `joel estimate` says so when `--prompt` is given; `joel check` doesn't warn.
-* Bad, because the built-in text now reaches the model with a newline between sentences instead of a space. The two moved files match the old constants character for character apart from that, but ADR-0010's probe ran on the space-joined text.
+* Bad, because the built-in text now reaches the model with a newline between sentences instead of a space. `disfluencies.md` matches its old constant character for character apart from that. `correct.md` was then rewritten for ADR-0014, and the grammar probes of ADR-0010 and ADR-0011 ran on the old space-joined text; they haven't been rerun.
 * Bad, because the `.md` files have to ship in the wheel. Hatch includes them today; a packaging change could drop them, and only `joel prompt` or a run would notice.
 * Neutral, because a literal `$` in a prompt must be written `$$`. None of the built-in prompts has one.
 
