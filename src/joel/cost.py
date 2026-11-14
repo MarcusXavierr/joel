@@ -21,14 +21,14 @@ class TokenRate(NamedTuple):
     per_word: float
 
 
-# Measured on 2026-11-13 against anthropic:claude-opus-5-5 with joel's prompts,
-# on 3- and 25-word sentences; refit when a prompt changes. Correction output
-# includes the model's thinking, which varies from run to run, so each point is
-# a three-run average.
-CLEANUP_INPUT = TokenRate(463, 7.0)
-CLEANUP_OUTPUT = TokenRate(10, 0.0)
-CORRECT_INPUT = TokenRate(532, 3.6)
-CORRECT_OUTPUT = TokenRate(13, 3.6)
+# Measured on 2026-11-14 against openai:gpt-6-luna with joel's prompts, on
+# blocks of 1 sentence (4 words) and 7 sentences (70 words); refit when a prompt
+# or the default model changes. Output includes the model's reasoning, which
+# varies from run to run, so each point is a three-run average.
+CLEANUP_INPUT = TokenRate(473, 6.4)
+CLEANUP_OUTPUT = TokenRate(31, 1.8)
+CORRECT_INPUT = TokenRate(479, 1.3)
+CORRECT_OUTPUT = TokenRate(20, 4.9)
 
 
 class PriceUnavailableError(Exception):

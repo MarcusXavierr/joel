@@ -6,9 +6,9 @@ from pydantic_ai.models import Model
 from pydantic_ai.settings import CacheConfig, ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-DEFAULT_MODEL = "anthropic:claude-opus-5-5"
+DEFAULT_MODEL = "openai:gpt-6-luna"
 # Sentences per model call; joel check --block-sentences overrides it.
-BLOCK_SENTENCES = 6
+BLOCK_SENTENCES = 7
 
 
 class ModelAnswerError(Exception):

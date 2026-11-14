@@ -36,22 +36,22 @@ def test_a_model_without_a_price_names_the_model(model: str) -> None:
         price(model, 1, 1, requests=1)
 
 
-def test_a_minute_of_speech_is_150_words_in_13_sentences_and_3_blocks() -> None:
+def test_a_minute_of_speech_is_150_words_in_13_sentences_and_2_blocks() -> None:
     estimate = estimate_cost(60.0)
 
     assert estimate.words == 150
     assert estimate.sentences == 13
-    assert estimate.calls == 6  # a cleanup and a correction per block of 6
+    assert estimate.calls == 4  # a cleanup and a correction per block of 7
     assert estimate.usd > 0
 
 
 def test_smaller_blocks_make_more_calls_and_repeat_the_instructions() -> None:
-    blocks_of_6 = estimate_cost(60.0)
+    default_blocks = estimate_cost(60.0)
     one_per_call = estimate_cost(60.0, block_sentences=1)
 
     assert one_per_call.calls == 26
-    assert one_per_call.input_tokens > blocks_of_6.input_tokens
-    assert one_per_call.usd > blocks_of_6.usd
+    assert one_per_call.input_tokens > default_blocks.input_tokens
+    assert one_per_call.usd > default_blocks.usd
 
 
 def test_a_second_of_speech_still_costs_one_sentence() -> None:

@@ -511,7 +511,7 @@ def test_audio_ffmpeg_cannot_read_is_an_error(
 def test_an_unknown_transcriber_is_an_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
 
@@ -522,7 +522,7 @@ def test_an_unknown_transcriber_is_an_error(
 def test_a_missing_api_key_stops_the_run_before_transcribing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def no_transcriber(name: str) -> FakeTranscriber:
         raise AssertionError("transcribed before checking the model")
@@ -534,7 +534,7 @@ def test_a_missing_api_key_stops_the_run_before_transcribing(
     assert main(["check", str(audio)]) == 1
     err = capsys.readouterr().err
     assert err.startswith("joel: error:")
-    assert "ANTHROPIC_API_KEY" in err
+    assert "OPENAI_API_KEY" in err
 
 
 def test_audio_the_transcriber_refuses_is_an_error(

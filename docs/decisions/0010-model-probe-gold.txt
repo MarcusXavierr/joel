@@ -1,0 +1,36 @@
+# Gold set for the model probe (ADR-0010): one continuous spoken monologue.
+# One sentence per line, punctuated as a transcriber would.
+# [...] wraps the whole words said wrong and may span several words.
+# A missing word is marked by bracketing the word right after the gap.
+# 20 lines hold grammar mistakes typical of Brazilian Portuguese speakers;
+# 10 are correct conversational English. Naturalness is never bracketed.
+Okay, let me tell you about my weekend.
+My brother [work] in a bank downtown, so he only gets Saturdays off.
+On Saturday we [go] to the beach with our cousins.
+[Had] a lot of people there because the weather was amazing.
+It was, like, the best day we've had all summer.
+I really love [the] nature, especially the beaches up north.
+My cousin is [engineer] at a small startup.
+She [don't] like to take vacations, which is kind of sad.
+Honestly, I don't think she ever stops working.
+I [am agree] with my brother that she needs a break.
+And then we just walked back to the car.
+I want to go hiking next Sunday, but it depends [of] the weather.
+I wasn't aware [about] the storm until my mom called me.
+She asked me if I wanted to have lunch with them.
+My parents have lived in the same house for thirty years.
+The people [is] really friendly in their neighborhood.
+My dad tried to explain [me] how his new phone works.
+I [don't know nothing] about phones, so I just nodded.
+Last year I [have visited] them only twice, so I felt a little guilty.
+I'm gonna try to visit them more often.
+I'm used to [wake] up early, so driving there isn't a problem.
+When I take the bus, I enjoy [to read] the whole way.
+My sister [have] two kids now.
+She didn't [went] with me last time because the baby was sick.
+I have [a] good news, by the way.
+If I had known earlier, I would have told you.
+Anyway, where [you are] going for the holidays?
+And what time [your flight leaves]?
+There are a lot of things I still need to finish before the holidays.
+So yeah, that's pretty much what happened.

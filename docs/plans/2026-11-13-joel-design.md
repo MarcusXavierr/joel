@@ -40,10 +40,10 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--transcriber` | `parakeet` | `parakeet`, `elevenlabs`, `openai` |
-| `--model` | `anthropic:claude-opus-5-5` | Any Pydantic AI model string |
+| `--model` | `openai:gpt-6-luna` | Any Pydantic AI model string |
 | `--min-confidence` | `0.67` | Filter threshold (step 6); value from the Cambridge paper |
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
-| `--block-sentences` | `6` | Sentences per LLM call (steps 3 and 4); `check` and `estimate` |
+| `--block-sentences` | `7` | Sentences per LLM call (steps 3 and 4); `check` and `estimate` |
 | `--json` | off | Prints the full result as JSON to stdout |
 
 `joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per block of `--block-sentences` sentences (cleanup and correction), and prices their tokens with `genai-prices`. A call's tokens are a fixed part per block, mostly the instructions, plus a part per word. Both were measured against the default model with Joel's prompts and need measuring again when a prompt changes. The estimate assumes no prompt caching and doesn't count retries, and its last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
@@ -143,7 +143,7 @@ Deterministic validation: an index outside the passage is an error and the call 
 
 ### 4. `correct` (LLM)
 
-One call per block of up to `--block-sentences` clean sentences (default 6), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). Structured output, one item per number:
+One call per block of up to `--block-sentences` clean sentences (default 7), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). The default model, `openai:gpt-6-luna`, caches nothing at these sizes; the setting pays off on Anthropic models ([ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md)). Structured output, one item per number:
 
 ```json
 {"sentences": [{"number": 1,
@@ -192,7 +192,7 @@ Terminal:
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: $0.008 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
+Cost: under $0.001 for 2 model calls (1574 input and 1035 output tokens) with openai:gpt-6-luna.
 ```
 
 There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
@@ -294,16 +294,16 @@ Architectural decisions live in [`docs/decisions/`](../decisions/README.md):
 - [ADR-0007](../decisions/0007-word-timestamps-optional-in-transcriber-contract.md): word timestamps optional in the `Word` contract, so `gpt-transcribe` fits behind the interface.
 - [ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md): cleanup and correction run over numbered blocks of sentences, one call per block.
 - [ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md): each step's tool schema and instructions go to the provider's prompt cache, and the step's first block runs alone to write it.
+- [ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md): `openai:gpt-6-luna` as the default model and 7 as the default block size, chosen with a precision probe.
 
 Smaller choices, reversible in an afternoon:
 
 | Choice | Reason |
 | --- | --- |
-| `--block-sentences` defaults to 6 | Enough to share one prompt across most of a minute of speech, small enough that a retry repeats little ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)) |
+| `--block-sentences` defaults to 7 | Shares one prompt across about half a minute of speech; the probe found no loss for `gpt-6-luna` at 5 or 10 ([ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md)) |
 | Low-confidence edits hidden by default | Precision over recall |
 | At most 8 model calls in flight, every cleanup before any correction | A correction reads its neighbors' clean text, so cleanup has to finish first; 8 keeps long recordings fast while keeping each burst of requests small |
 | Each step's first block runs alone | It writes the prompt cache that the step's other blocks read ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)) |
-| `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |
 | Inaudible edits (punctuation, case, apostrophes, spacing, common homophones, digits against number words) dropped in `diff_edits`, not marked uncertain | The transcriber wrote them, not the speaker, so no threshold makes them worth showing |

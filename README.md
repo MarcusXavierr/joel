@@ -22,7 +22,7 @@ $ joel check talk.m4a
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: $0.008 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
+Cost: under $0.001 for 2 model calls (1574 input and 1035 output tokens) with openai:gpt-6-luna.
 ```
 
 Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls cost for this recording.
@@ -74,9 +74,9 @@ You also need API keys, set as environment variables:
 
 | Variable | Needed for |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Always. The correction step uses Claude by default (`--model` changes that) |
+| `OPENAI_API_KEY` | Always. The correction step uses OpenAI's `gpt-6-luna` by default (`--model` changes that), and `--transcriber openai` uses it too |
+| `ANTHROPIC_API_KEY` | Only with an `anthropic:` model in `--model` |
 | `ELEVENLABS_API_KEY` | Only with `--transcriber elevenlabs` |
-| `OPENAI_API_KEY` | Only with `--transcriber openai` |
 
 With the default transcriber your audio stays on your machine, but the text of what you said is sent to the language model provider to be corrected. The two cloud transcribers also upload the audio file.
 
@@ -115,10 +115,10 @@ joel check talk.m4a --show-uncertain
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--transcriber` | `parakeet` | Picks the speech-to-text model: `parakeet`, `elevenlabs`, or `openai` |
-| `--model` | `anthropic:claude-opus-5-5` | Picks the language model, as a [Pydantic AI](https://ai.pydantic.dev/) model string |
+| `--model` | `openai:gpt-6-luna` | Picks the language model, as a [Pydantic AI](https://ai.pydantic.dev/) model string |
 | `--min-confidence` | `0.67` | How sure the transcription must be about a word before a mistake on it is reported |
 | `--show-uncertain` | off | Shows the mistakes that fell below that bar, marked as uncertain |
-| `--block-sentences` | `6` | How many sentences go to the language model in each call. Fewer means more calls and a higher cost |
+| `--block-sentences` | `7` | How many sentences go to the language model in each call. Fewer means more calls and a higher cost |
 | `--json` | off | Prints everything as JSON: the transcript, the corrections, every mistake with the reason it was kept or held back, and the tokens and cost of the run. The terminal report can be rebuilt from it |
 
 There is a second command, for finding out which transcriber to trust:
@@ -140,11 +140,11 @@ Before you send a long recording through a paid model, you can ask what it would
 ```
 $ joel estimate talk.m4a
 talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
-anthropic:claude-opus-5-5: about $0.265 for 42 calls (36795 input and 5883 output tokens)
-Assumes 150 words per minute, 12 words per sentence and 6 sentences per call, with no prompt caching; a retried call costs extra.
+openai:gpt-6-luna: about $0.008 for 36 calls (28686 input and 10968 output tokens)
+Assumes 150 words per minute, 12 words per sentence and 7 sentences per call, with no prompt caching; a retried call costs extra.
 ```
 
-The estimate only looks at how long the recording is. Joel sends the sentences to the language model in blocks of 6, and each block costs two calls, one to set the hesitations aside and one to correct it. `--block-sentences` changes the block size here and in `joel check`. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
+The estimate only looks at how long the recording is. Joel sends the sentences to the language model in blocks of 7, and each block costs two calls, one to set the hesitations aside and one to correct it. `--block-sentences` changes the block size here and in `joel check`. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
 
 ## Contributing
 
