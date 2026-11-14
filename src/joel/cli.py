@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import pydantic_ai
 from pydantic_ai.exceptions import ModelAPIError, UserError
 from pydantic_ai.models import infer_model
 
@@ -100,6 +101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     estimate.set_defaults(run=_estimate)
 
     args = parser.parse_args(argv)
+    # joel owns stdout and stderr; pydantic-ai's first-run banner would land in
+    # the report.
+    pydantic_ai.BANNER_ENABLED = False
     configure_logging()
     run: Callable[[argparse.Namespace], int] = args.run
     return run(args)

@@ -8,6 +8,8 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import pydantic_ai
+import pydantic_ai._display
 import pytest
 from conftest import user_prompt
 from errant.annotator import Annotator  # type: ignore[import-untyped]
@@ -290,6 +292,29 @@ def test_the_model_and_threshold_flags_reach_the_run(
     assert result.model == "nope:nothing"
     assert result.cost_usd is None  # genai-prices can't price it; the run goes on
     assert all(f.uncertain is None for s in result.sentences for f in s.edits)
+
+
+def test_check_prints_no_banner_where_pydantic_ai_would_show_one(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # pydantic-ai stays quiet under pytest and CI; lift both so it would speak.
+    monkeypatch.delenv("PYTEST_VERSION")
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("PYDANTIC_AI_NO_BANNER", raising=False)
+    # stderr is a pipe here; AI_AGENT says someone reads it anyway.
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(pydantic_ai._display, "_banner_displayed", False)
+    monkeypatch.setattr(pydantic_ai, "BANNER_ENABLED", True)
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+
+    assert main(["check", str(audio)]) == 0
+    out, err = capsys.readouterr()
+    assert "pydantic-ai v" not in out + err
 
 
 def _invalid_cleanup(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
