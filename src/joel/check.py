@@ -16,10 +16,11 @@ from joel.confidence import FilteredEdit, filter_edits
 from joel.correct import Correction, correct
 from joel.cost import PriceUnavailableError, price
 from joel.disfluencies import CleanSentence, strip_disfluencies
-from joel.edits import diff_edits
+from joel.edits import diff_edits, natural_problem
+from joel.prompts import Prompts
 from joel.sentences import split_sentences
 from joel.transcribers import Transcriber
-from joel.transcript import Transcript
+from joel.transcript import Transcript, Word
 
 MAX_CONCURRENT_CALLS = 8
 
@@ -27,7 +28,8 @@ MAX_CONCURRENT_CALLS = 8
 class CheckedSentence(BaseModel):
     """One sentence and everything the pipeline decided about it."""
 
-    words: list[int]  # Word.index of every word split_sentences put in it
+    first_word: int  # Word.index of the sentence's first word
+    last_word: int  # and of its last; the sentence is every index in between
     dropped: list[int]  # Word.index of every disfluency, sorted
     correction: Correction | None  # None when every word was dropped; no call made
     edits: list[FilteredEdit]  # in diff_edits order
@@ -37,6 +39,7 @@ class CheckResult(BaseModel):
     """Everything one run decided. The terminal report is rebuilt from this alone."""
 
     model: str  # the model string the run was given
+    prompts: dict[str, str]  # each prompt's name -> sha256 hex of the text used
     transcript: Transcript  # as the transcriber returned it
     sentences: list[CheckedSentence]
     requests: int  # model calls, retries included
@@ -56,6 +59,8 @@ async def run_check(
     min_confidence: float,
     annotator: Annotator,
     block_sentences: int,
+    prompts: Prompts,
+    better: bool,
 ) -> CheckResult:
     """Transcribe `audio` and run every later step over it.
 
@@ -63,7 +68,8 @@ async def run_check(
     cleanup first, then every correction. Each step runs its first block alone,
     so the rest read the prompt cache it writes; then at most
     MAX_CONCURRENT_CALLS at a time. The first call that fails raises its error
-    as is. `model_name` is what gets priced and recorded.
+    as is. `model_name` is what gets priced and recorded. Only with `better`
+    does the model write a natural version, held to word swaps.
     """
     transcript = transcriber.transcribe(audio)
     by_index = {w.index: w for w in transcript.words}
@@ -77,6 +83,7 @@ async def run_check(
         async with limit:
             clean = await strip_disfluencies(
                 [by_index[i] for sentence in block for i in sentence],
+                instructions=prompts.disfluencies,
                 model=model,
                 usage=usage,
             )
@@ -99,6 +106,15 @@ async def run_check(
     texts = [" ".join(w.text for w in c.words) for c in cleaned]
     spoken = [n for n, text in enumerate(texts) if text]
 
+    def review(grammatical: str, natural: str) -> str | None:
+        # Diffed against grammatical itself, so no change can hide behind a
+        # grammar fix the way it does in the report's naturalness edits.
+        words = [
+            Word(index=i, text=t, start_ms=None, end_ms=None, confidence=None)
+            for i, t in enumerate(grammatical.split())
+        ]
+        return natural_problem(diff_edits(words, grammatical, natural, annotator))
+
     # A block is the positions of its sentences among the spoken ones.
     async def fix(block: tuple[int, ...]) -> list[Correction]:
         async with limit:
@@ -110,6 +126,8 @@ async def run_check(
                     if block[-1] + 1 < len(spoken)
                     else None
                 ),
+                instructions=prompts.correct,
+                review=review if better else None,
                 model=model,
                 usage=usage,
             )
@@ -137,7 +155,8 @@ async def run_check(
         )
         checked.append(
             CheckedSentence(
-                words=sentence,
+                first_word=sentence[0],
+                last_word=sentence[-1],
                 dropped=clean.dropped,
                 correction=correction,
                 edits=filter_edits(edits, transcript.words, min_confidence),
@@ -157,6 +176,7 @@ async def run_check(
         cost = None
     return CheckResult(
         model=model_name,
+        prompts=prompts.hashes,
         transcript=transcript,
         sentences=checked,
         requests=usage.requests,

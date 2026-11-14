@@ -1,0 +1,16 @@
+# Gold set for the naturalness probe (ADR-0014).
+# One sentence per line, punctuated as a transcriber would. All are grammatical.
+# [...] wraps the words a native speaker would replace.
+# Lines 1-5 are unnatural: each holds one verb Brazilian Portuguese speakers
+# carry over from Portuguese ("tomar uma decisão", "perder o ônibus").
+# Lines 6-10 are natural and have nothing bracketed.
+I want to [take] a decision about the apartment this week.
+She [said] a lie to her boss about the meeting.
+He [made] a question at the end of the class.
+I need to [win] some time before I answer them.
+If I don't leave now, I'm going to [lose] the bus.
+I made a decision about the job last night.
+She told me the truth in the end.
+He asked a lot of questions in the meeting.
+We caught the last train home.
+I'm going to take a shower before dinner.

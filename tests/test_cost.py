@@ -78,6 +78,16 @@ def test_smaller_blocks_make_more_calls_and_repeat_the_instructions() -> None:
     assert one_per_call.usd > default_blocks.usd
 
 
+def test_the_natural_version_costs_more_in_the_same_calls() -> None:
+    grammar = estimate_cost(60.0)
+    better = estimate_cost(60.0, better=True)
+
+    assert better.calls == grammar.calls
+    assert better.input_tokens > grammar.input_tokens
+    assert better.output_tokens > grammar.output_tokens
+    assert better.usd > grammar.usd
+
+
 def test_a_second_of_speech_still_costs_one_sentence() -> None:
     estimate = estimate_cost(1.0)
 

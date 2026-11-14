@@ -1,4 +1,4 @@
-"""The terminal report, rebuilt from a CheckResult alone."""
+"""The report document and its terminal text, built from a CheckResult alone."""
 
 from decimal import Decimal
 
@@ -8,12 +8,13 @@ from joel.check import CheckedSentence, CheckResult
 from joel.confidence import FilteredEdit
 from joel.correct import Correction
 from joel.edits import Edit
-from joel.report import render
+from joel.report import build_report, render
 from joel.transcript import Transcript, Word
 
 MODEL = "anthropic:claude-opus-5-5"
 SAID = "There is many people in the the room."
 UNSURE = '"is" was heard with confidence 0.50, below the 0.67 threshold'
+HASHES = {"disfluencies": "d1" * 32, "correct": "c0" * 32}
 
 
 def result(
@@ -54,10 +55,12 @@ def result(
     )
     return CheckResult(
         model=model,
+        prompts=HASHES,
         transcript=Transcript(transcriber=transcriber, words=words),
         sentences=[
             CheckedSentence(
-                words=list(range(8)),
+                first_word=0,
+                last_word=7,
                 dropped=[5],
                 correction=Correction(
                     grammatical="There are many people in the room.",
@@ -86,14 +89,104 @@ ENTRY = """\
 00:12.0–00:15.1
   said:    There is many people in the room.
   correct: There are many people in the room.
+           00:12.4  is → are  R:VERB:SVA   grammar"""
+WITH_BETTER = """\
+00:12.0–00:15.1
+  said:    There is many people in the room.
+  correct: There are many people in the room.
            00:12.4  is → are         R:VERB:SVA   grammar
   better:  There are a lot of people in the room.
            00:12.8  many → a lot of  naturalness"""
 COST = f"Cost: $0.073 for 2 model calls (200 input and 20 output tokens) with {MODEL}."
 
 
+def text(
+    checked: CheckResult, *, show_uncertain: bool = False, better: bool = False
+) -> str:
+    return render(build_report(checked), show_uncertain=show_uncertain, better=better)
+
+
+def test_the_document_holds_every_mistake_with_its_times() -> None:
+    document = build_report(result(uncertain=UNSURE))
+
+    assert document.model_dump(mode="json") == {
+        "transcriber": "parakeet",
+        "timestamps": True,
+        "confidence_scores": True,
+        "prompts": HASHES,
+        "sentences": [
+            {
+                "start_ms": 12_000,
+                "end_ms": 15_100,
+                "said": "There is many people in the room.",
+                "correct": "There are many people in the room.",
+                "better": "There are a lot of people in the room.",
+                "mistakes": [
+                    {
+                        "category": "grammar",
+                        "type": "R:VERB:SVA",
+                        "original": "is",
+                        "correction": "are",
+                        "start_ms": 12_400,
+                        "end_ms": 12_700,
+                        "confidence": 0.95,
+                        "uncertain": UNSURE,
+                    },
+                    {
+                        "category": "naturalness",
+                        "type": "R:OTHER",
+                        "original": "many",
+                        "correction": "a lot of",
+                        "start_ms": 12_800,
+                        "end_ms": 13_100,
+                        "confidence": 0.95,
+                        "uncertain": None,
+                    },
+                ],
+            }
+        ],
+        "model": MODEL,
+        "requests": 2,
+        "input_tokens": 200,
+        "output_tokens": 20,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost_usd": "0.0731",
+    }
+
+
+def test_the_document_leaves_out_sentences_without_mistakes() -> None:
+    checked = result()
+    checked.sentences[0].edits = []
+
+    assert build_report(checked).sentences == []
+
+
+def test_a_mistake_on_a_word_without_a_time_has_no_time() -> None:
+    checked = result()
+    checked.transcript.words[1].end_ms = None  # "is"
+
+    sentence = build_report(checked).sentences[0]
+    assert (sentence.start_ms, sentence.end_ms) == (None, None)
+    assert [(m.start_ms, m.end_ms) for m in sentence.mistakes] == [
+        (12_400, None),
+        (12_800, 13_100),
+    ]
+
+
 def test_each_sentence_shows_its_span_and_when_each_mistake_was_said() -> None:
-    assert render(result(), show_uncertain=False) == f"{ENTRY}\n\n{COST}"
+    assert text(result()) == f"{ENTRY}\n\n{COST}"
+
+
+def test_better_adds_what_a_native_speaker_would_say() -> None:
+    assert text(result(), better=True) == f"{WITH_BETTER}\n\n{COST}"
+
+
+def test_a_sentence_with_only_a_naturalness_mistake_needs_better() -> None:
+    checked = result()
+    del checked.sentences[0].edits[0]
+
+    assert text(checked) == f"No mistakes found.\n\n{COST}"
 
 
 def test_a_sentence_with_two_mistakes_is_printed_once() -> None:
@@ -114,7 +207,7 @@ def test_a_sentence_with_two_mistakes_is_printed_once() -> None:
         sentence.edits[0],
     ]
 
-    assert render(checked, show_uncertain=False) == (
+    assert text(checked) == (
         "00:12.0–00:15.1\n"
         "  said:    There is many people in the room.\n"
         "  correct: There are many people in the rooms.\n"
@@ -125,7 +218,7 @@ def test_a_sentence_with_two_mistakes_is_printed_once() -> None:
 
 
 def test_a_transcriber_without_confidence_is_noted_once_at_the_top() -> None:
-    report = render(result(confidence=None), show_uncertain=False)
+    report = text(result(confidence=None))
 
     assert report == (
         "The parakeet transcriber gives no confidence scores, so no mistake was "
@@ -134,9 +227,7 @@ def test_a_transcriber_without_confidence_is_noted_once_at_the_top() -> None:
 
 
 def test_a_transcriber_without_timestamps_drops_the_times() -> None:
-    report = render(
-        result(transcriber="openai", timestamps=False), show_uncertain=False
-    )
+    report = text(result(transcriber="openai", timestamps=False), better=True)
 
     assert report == (
         "The openai transcriber gives no word timestamps, so mistakes are listed "
@@ -151,7 +242,7 @@ def test_a_transcriber_without_timestamps_drops_the_times() -> None:
 
 
 def test_an_uncertain_mistake_is_hidden_and_counted() -> None:
-    report = render(result(uncertain=UNSURE), show_uncertain=False)
+    report = text(result(uncertain=UNSURE), better=True)
 
     assert report == (
         "00:12.0–00:15.1\n"
@@ -164,7 +255,7 @@ def test_an_uncertain_mistake_is_hidden_and_counted() -> None:
 
 
 def test_show_uncertain_marks_the_mistake_and_says_why() -> None:
-    report = render(result(uncertain=UNSURE), show_uncertain=True)
+    report = text(result(uncertain=UNSURE), show_uncertain=True, better=True)
 
     assert report == (
         "00:12.0–00:15.1\n"
@@ -182,25 +273,32 @@ def test_every_hidden_mistake_is_counted() -> None:
     checked = result(uncertain=UNSURE)
     checked.sentences[0].edits[1].uncertain = UNSURE
 
-    assert render(checked, show_uncertain=False) == (
+    assert text(checked, better=True) == (
         "No mistakes found.\n\n"
         "2 uncertain mistakes hidden; --show-uncertain shows them.\n"
         f"{COST}"
     )
 
 
+def test_an_uncertain_naturalness_mistake_is_not_counted_without_better() -> None:
+    checked = result()
+    checked.sentences[0].edits[1].uncertain = UNSURE
+
+    assert text(checked) == f"{ENTRY}\n\n{COST}"
+
+
 def test_a_sentence_without_mistakes_reports_none() -> None:
     checked = result()
     checked.sentences[0].edits = []
 
-    assert render(checked, show_uncertain=False) == f"No mistakes found.\n\n{COST}"
+    assert text(checked) == f"No mistakes found.\n\n{COST}"
 
 
 def test_a_word_without_a_time_gets_placeholder_times() -> None:
     checked = result()
     checked.transcript.words[1].start_ms = None  # "is"
 
-    assert render(checked, show_uncertain=False) == (
+    assert text(checked, better=True) == (
         "--:--.-–--:--.-\n"
         "  said:    There is many people in the room.\n"
         "  correct: There are many people in the room.\n"
@@ -212,7 +310,7 @@ def test_a_word_without_a_time_gets_placeholder_times() -> None:
 
 
 def test_the_cost_line_says_how_much_input_came_from_the_cache() -> None:
-    report = render(result(cache_read_tokens=150), show_uncertain=False)
+    report = text(result(cache_read_tokens=150))
 
     assert report.splitlines()[-1] == (
         "Cost: $0.073 for 2 model calls (200 input (150 read from cache) and 20 "
@@ -221,7 +319,7 @@ def test_the_cost_line_says_how_much_input_came_from_the_cache() -> None:
 
 
 def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:
-    report = render(result(cost=None, model="ollama:llama3"), show_uncertain=False)
+    report = text(result(cost=None, model="ollama:llama3"))
 
     assert report.splitlines()[-1] == (
         "Cost: unknown, genai-prices has no price for ollama:llama3 "
@@ -262,6 +360,6 @@ def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:
 def test_the_cost_line_shows_three_decimals(
     cost: Decimal, requests: int, line: str
 ) -> None:
-    report = render(result(cost=cost, requests=requests), show_uncertain=False)
+    report = text(result(cost=cost, requests=requests))
 
     assert report.splitlines()[-1] == f"{line} with {MODEL}."

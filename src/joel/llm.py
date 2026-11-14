@@ -20,6 +20,7 @@ async def ask[D, T](
     agent: Agent[D, T],
     prompt: str,
     *,
+    instructions: str,
     deps: D,
     model: Model | str,
     usage: RunUsage | None,
@@ -35,6 +36,7 @@ async def ask[D, T](
         # `retries` still bounds the calls one block can make.
         result = await agent.run(
             prompt,
+            instructions=instructions,
             deps=deps,
             model=model,
             usage=usage,

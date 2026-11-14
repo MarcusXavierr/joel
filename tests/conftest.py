@@ -72,6 +72,12 @@ def user_prompt(messages: list[ModelMessage]) -> str:
     )
 
 
+def instructions(messages: list[ModelMessage]) -> str | None:
+    """The instructions a model call was sent with."""
+    requests = [m for m in messages if isinstance(m, ModelRequest)]
+    return requests[-1].instructions
+
+
 class ScriptedModel:
     """A model that gives canned structured answers, one per call, in order.
 
@@ -94,6 +100,10 @@ class ScriptedModel:
     def prompt(self, call: int = 0) -> str:
         """The user prompt text the model received on the given call."""
         return user_prompt(self.calls[call])
+
+    def instructions(self, call: int = 0) -> str | None:
+        """The instructions the model received on the given call."""
+        return instructions(self.calls[call])
 
 
 @pytest.fixture

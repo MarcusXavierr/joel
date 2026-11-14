@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from joel.cli import main
+from joel.prompts import NAMES, builtin
 
 AUDIO = Path(__file__).parent / "fixtures" / "audio" / "acceptance.wav"
 # 60 seconds of 16 kHz float32 PCM.
@@ -136,6 +137,23 @@ def test_estimate_reports_duration_words_and_cost(
     )
 
 
+def test_estimate_better_prices_the_natural_version_too(
+    tmp_path: Path,
+    fake_ffmpeg: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_ffmpeg(ONE_MINUTE_OF_PCM)
+    audio = str(tmp_path / "talk.m4a")
+
+    def output_tokens(*flags: str) -> int:
+        assert main(["estimate", audio, *flags]) == 0
+        found = re.search(r"and (\d+) output tokens", capsys.readouterr().out)
+        assert found is not None
+        return int(found[1])
+
+    assert output_tokens("--better") > output_tokens()
+
+
 def test_estimate_takes_the_block_size(
     tmp_path: Path,
     fake_ffmpeg: Callable[[str], None],
@@ -217,3 +235,79 @@ def test_installed_command_estimates_a_real_recording() -> None:
     assert result.returncode == 0, result.stderr
     assert "0:09 of audio, about 22 words in 2 sentences" in result.stdout
     assert "for 2 calls" in result.stdout
+
+
+def test_prompt_knows_only_the_built_in_names(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["prompt", "tone"])
+
+    assert exited.value.code == 2
+    assert "invalid choice: 'tone'" in capsys.readouterr().err
+
+
+def test_prompt_prints_a_built_in_prompt_as_is(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["prompt", "correct"]) == 0
+    assert capsys.readouterr().out == builtin("correct")
+
+
+@pytest.mark.parametrize("command", ["check", "estimate"])
+def test_the_help_lists_every_prompt_a_file_can_replace(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        main([command, "--help"])
+
+    out = capsys.readouterr().out
+    listed = out.split("prompts --prompt can replace:\n", 1)[1].splitlines()
+    assert [line.split()[0] for line in listed] == list(NAMES)
+
+
+@pytest.mark.parametrize("value", ["tone=mine.md", "correct"])
+def test_a_prompt_override_needs_a_known_name_and_a_file(
+    value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["check", str(tmp_path), "--prompt", value])
+
+    assert exited.value.code == 2
+    assert (
+        f"{value!r} is not NAME=FILE with NAME one of: {', '.join(NAMES)}"
+        in capsys.readouterr().err
+    )
+
+
+def test_an_estimate_with_a_prompt_file_says_it_was_measured_without_it(
+    tmp_path: Path,
+    fake_ffmpeg: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_ffmpeg(ONE_MINUTE_OF_PCM)
+    mine = tmp_path / "mine.md"
+    mine.write_text("Drop only uh.")
+
+    flags = ["--prompt", f"disfluencies={mine}"]
+    status = main(["estimate", str(tmp_path / "talk.m4a"), *flags])
+
+    assert status == 0
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "Measured with the built-in prompts; a --prompt file can change the cost."
+    )
+
+
+def test_an_estimate_with_a_bad_prompt_file_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = tmp_path / "nope.md"
+
+    status = main(
+        ["estimate", str(tmp_path / "talk.m4a"), "--prompt", f"correct={missing}"]
+    )
+
+    assert status == 1
+    assert capsys.readouterr().err == (
+        f"joel: error: cannot read prompt file {missing}: No such file or directory\n"
+    )

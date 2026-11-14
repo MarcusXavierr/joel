@@ -2,6 +2,7 @@
 
 import asyncio
 import gc
+import hashlib
 import json
 import re
 import warnings
@@ -12,10 +13,16 @@ from pathlib import Path
 import pydantic_ai
 import pydantic_ai._display
 import pytest
-from conftest import user_prompt
+from conftest import instructions, user_prompt
 from errant.annotator import Annotator  # type: ignore[import-untyped]
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.usage import RequestUsage
@@ -23,7 +30,8 @@ from pydantic_ai.usage import RequestUsage
 from joel.check import CheckResult, run_check
 from joel.cli import main
 from joel.llm import BLOCK_SENTENCES
-from joel.report import render
+from joel.prompts import NAMES, load_prompts
+from joel.report import Report, build_report, render
 from joel.transcribers.openai import AudioTooLargeError
 from joel.transcript import Transcript, Word
 
@@ -38,8 +46,11 @@ FIXES = {
     "There is many": "There are many",
     "I am agree": "I agree",
 }
+# What a native speaker would also change, when asked.
+NATURAL = {"There are many": "There are a lot of"}
 FILLERS = {"uh", "um"}
 MODEL = "anthropic:claude-opus-5-5"
+PROMPTS = load_prompts({}, better=False)
 
 # main() configures logging for the whole process; each test gets the root back.
 pytestmark = pytest.mark.usefixtures("restore_root_logger")
@@ -79,16 +90,21 @@ class PipelineModel:
     def __init__(self, cache_read_tokens: int = 0) -> None:
         self.cache_read_tokens = cache_read_tokens
         self.prompts: list[str] = []
+        self.instructions: list[str | None] = []
+        self.schemas: list[str] = []  # each correction's output schema, as JSON
         self.model = FunctionModel(self.respond)
 
     def respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         prompt = user_prompt(messages)
         self.prompts.append(prompt)
+        self.instructions.append(instructions(messages))
         tool = info.output_tools[0]
         answer: dict[str, object]
         if "drop" in tool.parameters_json_schema["properties"]:
             answer = {"drop": _disfluencies(json.loads(prompt))}
         else:
+            schema = json.dumps(tool.parameters_json_schema)
+            self.schemas.append(schema)
             block = prompt.split("Sentences to correct:\n", 1)[1].splitlines()
             items = []
             for line in block:
@@ -98,13 +114,12 @@ class PipelineModel:
                 sentence = found[2]
                 for wrong, right in FIXES.items():
                     sentence = sentence.replace(wrong, right)
-                items.append(
-                    {
-                        "number": int(found[1]),
-                        "grammatical": sentence,
-                        "natural": sentence,
-                    }
-                )
+                item = {"number": int(found[1]), "grammatical": sentence}
+                if '"natural"' in schema:
+                    for odd, native in NATURAL.items():
+                        sentence = sentence.replace(odd, native)
+                    item["natural"] = sentence
+                items.append(item)
             answer = {"sentences": items}
         return ModelResponse(
             parts=[ToolCallPart(tool.name, answer)],
@@ -144,6 +159,8 @@ async def check(
         min_confidence=min_confidence,
         annotator=annotator,
         block_sentences=block_sentences,
+        prompts=PROMPTS,
+        better=False,
     )
 
 
@@ -258,7 +275,7 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
 
     assert result.sentences == []
     assert (result.requests, result.cost_usd) == (0, Decimal(0))
-    assert render(result, show_uncertain=False) == (
+    assert render(build_report(result), show_uncertain=False, better=False) == (
         "No mistakes found.\n\n"
         f"Cost: $0.000 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
     )
@@ -298,6 +315,8 @@ async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> No
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
+        better=False,
     )
 
     assert result.requests == 40
@@ -330,6 +349,8 @@ async def test_each_step_runs_its_first_call_alone(annotator: Annotator) -> None
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
+        better=False,
     )
 
     # The first call writes the prompt cache; the others start once it's done.
@@ -357,6 +378,8 @@ async def test_every_call_asks_to_cache_only_the_instructions(
         min_confidence=0.67,
         annotator=annotator,
         block_sentences=1,
+        prompts=PROMPTS,
+        better=False,
     )
 
     assert settings == [{"messages": False}] * 6
@@ -395,9 +418,11 @@ def cli_pipeline(
     return install
 
 
+@pytest.mark.parametrize("better", [False, True])
 @pytest.mark.parametrize("show_uncertain", [False, True])
-def test_the_json_rebuilds_the_terminal_report(
+def test_the_json_file_rebuilds_the_terminal_report(
     show_uncertain: bool,
+    better: bool,
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -405,36 +430,292 @@ def test_the_json_rebuilds_the_terminal_report(
     cli_pipeline(spoken_words(confidence={12: 0.5}))  # "is" is uncertain
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
-    flag = ["--show-uncertain"] if show_uncertain else []
-
-    assert main(["check", str(audio), *flag]) == 0
-    report = capsys.readouterr().out
-    assert main(["check", str(audio), "--json"]) == 0
     saved = tmp_path / "talk.json"
-    saved.write_text(capsys.readouterr().out)
+    flags = ["--show-uncertain"] * show_uncertain + ["--better"] * better
+
+    assert main(["check", str(audio), *flags, "--json", str(saved)]) == 0
+    terminal = capsys.readouterr().out
+
+    document = json.loads(saved.read_text())
+    assert "transcript" not in document
+    assert sorted(document["prompts"]) == sorted(NAMES)
+    mistakes = [m for s in document["sentences"] for m in s["mistakes"]]
+    assert [m["original"] for m in mistakes if m["uncertain"]] == ["is"]
+    report = Report.model_validate(document)
+    shown = render(report, show_uncertain=show_uncertain, better=better)
+    assert shown + "\n" == terminal
+
+
+def test_verbose_writes_everything_the_run_decided(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    saved = tmp_path / "talk.json"
+
+    assert main(["check", str(audio), "--json", str(saved), "--verbose"]) == 0
 
     result = CheckResult.model_validate_json(saved.read_text())
-    assert render(result, show_uncertain=show_uncertain) + "\n" == report
+    assert [w.text for w in result.transcript.words] == [w.text for w in spoken_words()]
+    assert [(s.first_word, s.last_word) for s in result.sentences] == [
+        (0, 10),
+        (11, 18),
+        (19, 23),
+    ]
+    assert capsys.readouterr().out.startswith("00:00.0–00:05.4\n  said:")
+
+
+def test_verbose_needs_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["check", str(tmp_path), "--verbose"])
+
+    assert exited.value.code == 2
+    assert "--verbose works only with --json" in capsys.readouterr().err
+
+
+def test_a_json_path_in_a_missing_folder_stops_the_run_before_transcribing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def no_transcriber(name: str) -> FakeTranscriber:
+        raise AssertionError("transcribed before checking the JSON path")
+
+    monkeypatch.setattr("joel.cli.load_transcriber", no_transcriber)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    folder = tmp_path / "nope"
+
+    assert main(["check", str(audio), "--json", str(folder / "talk.json")]) == 1
+    assert capsys.readouterr().err == f"joel: error: {folder} is not a directory.\n"
+
+
+def test_a_json_file_that_cannot_be_written_still_prints_the_report(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    taken = tmp_path / "taken"
+    taken.mkdir()
+
+    assert main(["check", str(audio), "--json", str(taken)]) == 1
+    out, err = capsys.readouterr()
+    assert "  said:" in out
+    assert err == f"joel: error: could not write {taken}: Is a directory\n"
+
+
+def test_a_prompt_file_replaces_the_built_in_instructions(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cli_pipeline(spoken_words())
+    model = PipelineModel()
+    monkeypatch.setattr("joel.cli.infer_model", lambda name: model.model)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    mine = tmp_path / "mine.md"
+    mine.write_text("Fix only the grammar.\n")
+    earlier = tmp_path / "earlier.md"
+    earlier.write_text("Fix everything.\n")
+    saved = tmp_path / "talk.json"
+
+    # The last --prompt for a name wins.
+    flags = ["--prompt", f"correct={earlier}", "--prompt", f"correct={mine}"]
+    flags += ["--json", str(saved)]
+    assert main(["check", str(audio), *flags]) == 0
+
+    sent = zip(model.prompts, model.instructions, strict=True)
+    corrections = [i for p, i in sent if "Sentences to correct" in p]
+    assert corrections == ["Fix only the grammar."]
+    prompts = Report.model_validate_json(saved.read_text()).prompts
+    assert prompts["correct"] == hashlib.sha256(b"Fix only the grammar.\n").hexdigest()
+    assert prompts["disfluencies"] == PROMPTS.hashes["disfluencies"]
+
+
+@pytest.mark.parametrize(
+    ("text", "flags", "message"),
+    [
+        (None, [], "cannot read prompt file {path}: No such file or directory"),
+        (
+            "Fix it. $tone",
+            [],
+            "{path}: unknown placeholder $tone; the correct prompt allows $natural.",
+        ),
+        (
+            "Fix it.",
+            ["--better"],
+            "{path}: --better needs $natural in the correct prompt, "
+            "where the correct-natural prompt goes.",
+        ),
+    ],
+    ids=["missing file", "unknown placeholder", "better without $natural"],
+)
+def test_a_bad_prompt_file_stops_the_run_before_transcribing(
+    text: str | None,
+    flags: list[str],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def no_transcriber(name: str) -> FakeTranscriber:
+        raise AssertionError("transcribed before checking the prompts")
+
+    monkeypatch.setattr("joel.cli.load_transcriber", no_transcriber)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    mine = tmp_path / "mine.md"
+    if text is not None:
+        mine.write_text(text)
+
+    assert main(["check", str(audio), *flags, "--prompt", f"correct={mine}"]) == 1
+    expected = message.format(path=mine)
+    assert capsys.readouterr().err == f"joel: error: {expected}\n"
+
+
+@pytest.mark.parametrize("better", [False, True])
+def test_naturalness_appears_only_when_asked_for(
+    better: bool,
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_pipeline(spoken_words())
+    model = PipelineModel()
+    monkeypatch.setattr("joel.cli.infer_model", lambda name: model.model)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+
+    assert main(["check", str(audio), *["--better"] * better]) == 0
+
+    out = capsys.readouterr().out
+    assert out.count("  said:") == out.count("  correct:") == 3
+    assert ['"natural"' in schema for schema in model.schemas] == [better]
+    natural = "  better:  There are a lot of people in the room.\n"
+    assert (natural in out) == better
+    assert ("many → a lot of" in out) == better
+
+
+def _retry_text(messages: list[ModelMessage]) -> str:
+    request = messages[-1]
+    assert isinstance(request, ModelRequest)
+    return "\n".join(
+        str(part.content) for part in request.parts if isinstance(part, ToolReturnPart)
+    )
+
+
+async def _check_one(
+    said: str, natural: str, annotator: Annotator, grammatical: str | None = None
+) -> tuple[CheckResult, list[list[ModelMessage]]]:
+    """Run --better over one sentence; the model leaves it as is unless told."""
+    corrections: list[list[ModelMessage]] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tool = info.output_tools[0]
+        if "drop" in tool.parameters_json_schema["properties"]:
+            return ModelResponse(parts=[ToolCallPart(tool.name, {"drop": []})])
+        corrections.append(messages)
+        fixed = said if grammatical is None else grammatical
+        item = {"number": 1, "grammatical": fixed, "natural": natural}
+        return ModelResponse(parts=[ToolCallPart(tool.name, {"sentences": [item]})])
+
+    result = await run_check(
+        Path("talk.m4a"),
+        FakeTranscriber("local", unscored(*said.split(" "))),
+        model=FunctionModel(respond),
+        model_name=MODEL,
+        min_confidence=0.67,
+        annotator=annotator,
+        block_sentences=BLOCK_SENTENCES,
+        prompts=load_prompts({}, better=True),
+        better=True,
+    )
+    return result, corrections
+
+
+@pytest.mark.anyio
+async def test_a_rewrite_dressed_up_as_naturalness_never_reaches_the_report(
+    annotator: Annotator,
+) -> None:
+    said = "She told me the truth in the end."
+
+    result, corrections = await _check_one(said, "She told me the truth.", annotator)
+
+    assert len(corrections) == 2
+    retry = _retry_text(corrections[1])
+    assert retry.startswith(
+        "Fix natural in these sentences and change nothing else:\n"
+        "Sentence 1: natural adds or removes words"
+    )
+    assert retry.endswith("only replace words.")
+    assert result.sentences[0].edits == []
+    assert result.sentences[0].correction is not None
+    assert result.sentences[0].correction.natural == said
+
+
+@pytest.mark.anyio
+async def test_a_rewrite_next_to_a_grammar_fix_is_sent_back_too(
+    annotator: Annotator,
+) -> None:
+    # Against what was said, the added "quickly" overlaps the go → went fix
+    # and would vanish from the naturalness edits, yet still sit in `better:`.
+    said = "Yesterday he go to the market and I take a decision."
+    grammatical = "Yesterday he went to the market and I took a decision."
+    natural = "Yesterday he quickly went to the supermarket and I made a decision."
+
+    result, corrections = await _check_one(said, natural, annotator, grammatical)
+
+    assert len(corrections) == 2
+    assert _retry_text(corrections[1]).startswith(
+        "Fix natural in these sentences and change nothing else:\nSentence 1: "
+    )
+    sentence = build_report(result).sentences[0]
+    assert sentence.better == grammatical
+    assert [m.category for m in sentence.mistakes] == ["grammar", "grammar"]
+
+
+@pytest.mark.anyio
+async def test_a_word_swap_is_naturalness_on_the_first_answer(
+    annotator: Annotator,
+) -> None:
+    said = "She said a lie to her boss."
+
+    result, corrections = await _check_one(
+        said, "She told a lie to her boss.", annotator
+    )
+
+    assert len(corrections) == 1
+    report = build_report(result)
+    assert report.sentences[0].better == "She told a lie to her boss."
+    assert [
+        (m.category, m.original, m.correction) for m in report.sentences[0].mistakes
+    ] == [("naturalness", "said", "told")]
 
 
 def test_the_model_threshold_and_block_flags_reach_the_run(
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_pipeline(spoken_words(confidence={12: 0.5}))  # "is", exactly at 0.5
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
+    saved = tmp_path / "talk.json"
 
-    flags = ["--model", "nope:nothing", "--min-confidence", "0.5", "--json"]
-    flags += ["--block-sentences", "1"]
+    flags = ["--model", "nope:nothing", "--min-confidence", "0.5"]
+    flags += ["--block-sentences", "1", "--json", str(saved)]
     assert main(["check", str(audio), *flags]) == 0
 
-    result = CheckResult.model_validate_json(capsys.readouterr().out)
-    assert result.model == "nope:nothing"
-    assert result.requests == 6  # three sentences, one call each per step
-    assert result.cost_usd is None  # genai-prices can't price it; the run goes on
-    assert all(f.uncertain is None for s in result.sentences for f in s.edits)
+    report = Report.model_validate_json(saved.read_text())
+    assert report.model == "nope:nothing"
+    assert report.requests == 6  # three sentences, one call each per step
+    assert report.cost_usd is None  # genai-prices can't price it; the run goes on
+    assert [m.uncertain for s in report.sentences for m in s.mistakes] == [None] * 4
 
 
 def test_check_prints_no_banner_where_pydantic_ai_would_show_one(
@@ -648,20 +929,26 @@ AUDIO = Path(__file__).parent / "fixtures" / "audio" / "acceptance.wav"
 def test_check_flags_the_four_mistakes_in_the_recording(
     monkeypatch: pytest.MonkeyPatch,
     annotator: Annotator,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("joel.cli.infer_model", lambda name: PipelineModel().model)
     monkeypatch.setattr("joel.cli.load_annotator", lambda: annotator)
+    saved = tmp_path / "talk.json"
 
-    assert main(["check", str(AUDIO), "--json"]) == 0
+    flags = ["--json", str(saved), "--verbose", "--better"]
+    assert main(["check", str(AUDIO), *flags]) == 0
 
-    result = CheckResult.model_validate_json(capsys.readouterr().out)
+    report = capsys.readouterr().out
+    result = CheckResult.model_validate_json(saved.read_text())
     by_index = {w.index: w for w in result.transcript.words}
     disfluent = {w.index for w in result.transcript.words if w.text in {"uh,", "the"}}
     assert len(disfluent) == 3
     kept = []
     for sentence in result.sentences:
-        spoken = [by_index[i] for i in sentence.words]
+        spoken = [
+            by_index[i] for i in range(sentence.first_word, sentence.last_word + 1)
+        ]
         for f in sentence.edits:
             assert disfluent.isdisjoint(f.edit.words)
             if f.edit.category != "grammar" or f.uncertain is not None:
@@ -682,7 +969,8 @@ def test_check_flags_the_four_mistakes_in_the_recording(
         ("is", "are", ["is"]),
         ("am", "", ["am"]),
     ]
-    report = render(result, show_uncertain=False)
+    shown = render(build_report(result), show_uncertain=False, better=True)
+    assert report == shown + "\n"
     entries = report.split("\n\n")[:-1]  # the cost line closes the report
     assert [e.count("  said:") for e in entries] == [1, 1, 1]
     first = entries[0].splitlines()
@@ -699,3 +987,6 @@ def test_check_flags_the_four_mistakes_in_the_recording(
     assert all(re.fullmatch(r"\d\d:\d\d\.\d", clock) for clock in clocks)
     assert clocks[0] < clocks[1]
     assert report.count(" grammar\n") == 4
+    # The real annotator and the guard let the model's word swap through.
+    assert "  better:  There are a lot of people in the room.\n" in report
+    assert re.search(r"\d\d:\d\d\.\d  many → a lot of  naturalness\n", report)
