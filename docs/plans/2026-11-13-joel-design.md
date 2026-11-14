@@ -31,8 +31,10 @@ One criterion drives every decision: **precision over recall**. Flagging a mista
 
 ```
 joel check talk.m4a
-joel check talk.m4a --transcriber elevenlabs --json > talk.json
-joel check talk.m4a --show-uncertain
+joel check talk.m4a --transcriber elevenlabs --json talk.json
+joel check talk.m4a --show-uncertain --better
+joel prompt correct > mine.md
+joel check talk.m4a --prompt correct=mine.md
 joel bench recordings/ --transcriber parakeet --transcriber elevenlabs --transcriber openai
 joel estimate talk.m4a --model anthropic:claude-opus-5-5
 ```
@@ -44,9 +46,12 @@ joel estimate talk.m4a --model anthropic:claude-opus-5-5
 | `--min-confidence` | `0.67` | Filter threshold (step 6); value from the Cambridge paper |
 | `--show-uncertain` | off | Shows edits dropped by the filter, marked as uncertain |
 | `--block-sentences` | `7` | Sentences per LLM call (steps 3 and 4); `check` and `estimate` |
-| `--json` | off | Prints the full result as JSON to stdout |
+| `--better` | off | Asks for the natural version and shows the naturalness edits (steps 4 and 7); `check` and `estimate` |
+| `--json PATH` | none | Also writes the report document to `PATH` (step 7) |
+| `--verbose` | off | With `--json`, writes the full run result instead of the report document |
+| `--prompt NAME=FILE` | none | Replaces a built-in prompt for one run; repeatable; `check` and `estimate` (see [Prompts](#prompts)) |
 
-`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per block of `--block-sentences` sentences (cleanup and correction), and prices their tokens with `genai-prices`. A call's tokens are a fixed part per block, mostly the instructions, plus a part per word. Both were measured against the default model with Joel's prompts and need measuring again when a prompt changes. The estimate assumes no prompt caching and doesn't count retries, and its last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
+`joel estimate` decodes the file only to measure how long it is. It assumes 150 words a minute and 12 words a sentence, counts two calls per block of `--block-sentences` sentences (cleanup and correction), and prices their tokens with `genai-prices`. A call's tokens are a fixed part per block, mostly the instructions, plus a part per word. Both were measured against the default model with Joel's built-in prompts and need measuring again when a prompt changes. With `--better` the correction calls use their own rates, measured with the natural version in the prompt and the answer. With `--prompt` the estimate adds a line saying it was measured with the built-in prompts. The estimate assumes no prompt caching and doesn't count retries, and its last line says so. `joel check` prices the tokens its calls actually used with the same function (see `render`).
 
 ## Pipeline
 
@@ -139,29 +144,31 @@ The LLM receives a block of up to `--block-sentences` sentences as one passage o
  "output": {"drop": [12, 13, 16]}}
 ```
 
-Deterministic validation: an index outside the passage is an error and the call is retried once. If the retry is also wrong, the run stops with an error that names the passage. Dropped indices appear in `--json` for auditing.
+Deterministic validation: an index outside the passage is an error and the call is retried once. If the retry is also wrong, the run stops with an error that names the passage. Dropped indices appear in `--json --verbose` for auditing.
 
 ### 4. `correct` (LLM)
 
-One call per block of up to `--block-sentences` clean sentences (default 7), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). The default model, `openai-codex:gpt-6.1-terra`, caches nothing at these sizes; the setting pays off on Anthropic models ([ADR-0011](../decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md)). Structured output, one item per number:
+One call per block of up to `--block-sentences` clean sentences (default 7), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). Without `--better` the correction prompt is shorter and may fall under that minimum ([ADR-0014](../decisions/0014-naturalness-only-on-request-held-to-word-swaps.md)). The default model, `openai-codex:gpt-6.1-terra`, caches nothing at these sizes; the setting pays off on Anthropic models ([ADR-0011](../decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md)). Structured output, one item per number:
 
 ```json
 {"sentences": [{"number": 1,
-                "grammatical": "There are many people in the room.",
-                "natural": "There are a lot of people in the room."}]}
+                "grammatical": "I made a party last week.",
+                "natural": "I threw a party last week."}]}
 ```
 
 An answer whose numbers aren't exactly 1 to n, in order, is retried once.
 
 - `grammatical`: minimal edit, grammar only. A correct sentence comes back identical.
-- `natural`: minimal edit on top of `grammatical`, only what a native speaker would find odd. If nothing sounds odd, identical to `grammatical`.
+- `natural`: only with `--better`. Starting from `grammatical`, it swaps a word or fixed phrase a native speaker would never use there ("made a party" → "threw a party"). If nothing sounds wrong, identical to `grammatical`. Without `--better` the output schema has no `natural` field, so the model is never asked for one, and `Correction.natural` is `null`.
 
 The minimal-edit instruction is the core of the prompt: LLMs tend to rewrite the whole sentence.
+
+With `--better`, a deterministic guard checks each natural version before the answer is accepted ([ADR-0014](../decisions/0014-naturalness-only-on-request-held-to-word-swaps.md)). It diffs the clean sentence against `grammatical` and `natural` as step 5 does and looks at the naturalness edits only. Each must be an ERRANT replacement (`R:`), with at most `NATURAL_MAX_WORDS` (3) words on either side, and a sentence may have at most `NATURAL_MAX_EDITS` (2) of them. A block with a sentence that breaks a rule goes back to the model once, with a message that names each such sentence and the rule; that is the step's only retry, shared with numbering errors. If the retry still breaks a rule, that sentence's `natural` becomes its `grammatical`, so the run never fails over naturalness.
 
 ### 5. `diff_edits` (ERRANT)
 
 - **Grammar mistakes**: ERRANT between the clean sentence and `grammatical`.
-- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits that overlap a grammar mistake. `natural` is written on top of `grammatical`, so its diff repeats every grammar edit, and this rule is what removes the repeats. Two edits overlap when they touch the same `Word.index`, the way "do" and "n't" are one spoken word. When either edit is an insertion, they overlap when their token spans touch, which also drops an insertion right next to a grammar mistake. A few real naturalness edits get lost that way; precision comes first.
+- **Naturalness**: ERRANT between the clean sentence and `natural`, minus edits that overlap a grammar mistake. `natural` is written on top of `grammatical`, so its diff repeats every grammar edit, and this rule is what removes the repeats. Two edits overlap when they touch the same `Word.index`, the way "do" and "n't" are one spoken word. When either edit is an insertion, they overlap when their token spans touch, which also drops an insertion right next to a grammar mistake. A few real naturalness edits get lost that way; precision comes first. A run without `--better` has no `natural`, so it has no naturalness edits.
 
 The clean sentence goes into ERRANT as text and **is tokenized by spaCy** (`tokenise=True`). Each spaCy token maps back to a `Word.index` by character offset (`token.idx`) in the string built from the words. Measured on 2026-11-13: with whitespace tokenization, "don't → doesn't" comes out as `R:PUNCT`; with spaCy ("do" + "n't") it comes out as `do → does R:VERB:SVA`, which is correct.
 
@@ -179,7 +186,7 @@ Edit confidence = minimum confidence of the original words in the span; for an i
 
 ### 7. `render`
 
-Terminal:
+Terminal, from `joel check talk.m4a --better`:
 
 ```
 00:12.0–00:15.1
@@ -195,15 +202,31 @@ Terminal:
 Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
 
-There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
+There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out, and `better:` shows only with `--better`. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
 
 When the transcriber gives no timestamps (`openai`), the header and the start times are left out and the report says so once at the top. A transcriber that gives no confidence scores gets a note at the top too, since nothing could be held back as uncertain. In a transcript that has times, a sentence with a word that lacks one gets the header `--:--.-–--:--.-`, and a change on such a word starts with `--:--.-`.
 
-Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` With `--show-uncertain` they appear in place, with `uncertain` at the end of their change line and an `unsure:` line under it that names the least confident word and its score.
+Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` The count leaves out naturalness edits unless `--better` is set. With `--show-uncertain` they appear in place, with `uncertain` at the end of their change line and an `unsure:` line under it that names the least confident word and its score.
 
 The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included. Input read from the prompt cache is priced at the cache's rate, and the line says how much of the input that was: `(1650 read from cache)`. If `genai-prices` has no price for the model, the run still succeeds and the line says the cost is unknown, with the call and token counts.
 
-`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's model calls, input and output tokens with the part read from and written to the prompt cache, and its cost in US dollars (`null` when it can't be priced). The terminal report is rebuilt from this document alone, so `--show-uncertain` doesn't change it.
+The terminal text is a view of a report document, `build_report(result)`, and `render(report, show_uncertain=, better=)` is a pure function of it. The document holds, for every sentence with at least one edit, its time span, `said`, `correct`, `better` (`null` without `--better`) and every mistake in spoken order with its category, ERRANT type, original, correction, start and end times, confidence and the reason it is uncertain, if it is. It also holds the transcriber, whether it gave timestamps and confidence scores, the SHA-256 of every prompt used, and the run's model calls, input and output tokens with the part read from and written to the prompt cache, and its cost in US dollars (`null` when it can't be priced). Uncertain mistakes are always in it, so `--show-uncertain` and `--better` change only the terminal.
+
+`--json PATH` writes that document to `PATH`; stdout always gets the terminal report, printed before the file is written, so a run that has been paid for is never lost to a bad path. A `PATH` whose folder doesn't exist stops the run before anything is transcribed. `--json PATH --verbose` writes the full run result instead: the raw transcript, each sentence as `first_word`/`last_word` with its dropped indices, the LLM corrections, every edit with its filter verdict, the prompt hashes, and the same usage and cost. `--verbose` without `--json` is a usage error.
+
+## Prompts
+
+The instructions each LLM step sends live in `src/joel/prompts/` as Markdown files, one sentence per line, shipped inside the package. A registry in `joel.prompts` (`SPECS`) lists them with a one-line summary and the placeholders each may hold; the loader, `--prompt`, the `--help` epilog, `joel prompt`'s choices and the hashes all read it ([ADR-0013](../decisions/0013-prompts-as-files-users-can-override.md)).
+
+| Name | Step | Placeholders |
+| --- | --- | --- |
+| `disfluencies` | 3 | none |
+| `correct` | 4 | `$natural` |
+| `correct-natural` | 4, only with `--better` | none |
+
+Prompts are `string.Template`s. With `--better`, the `correct-natural` text goes where `correct` says `$natural`; without it, `$natural` becomes empty. `$$` is a literal `$`. The run's instructions are the filled text, stripped. `--prompt NAME=FILE` replaces one prompt for that run, and `joel prompt NAME` prints a built-in one to start from. Before anything is decoded or transcribed, the run stops with exit code 1 when a file can't be read, holds a `$` that starts no placeholder, holds a placeholder its prompt doesn't allow, or, with `--better`, is a `correct` prompt without `$natural`. An unknown `NAME` is a usage error (exit code 2). Each run records the SHA-256 of the raw text of every prompt, used or not, in the report and the full result.
+
+The probes and the token rates in `cost.py` were measured with the built-in prompts; a user's file can change both.
 
 ## `joel bench`
 
@@ -265,7 +288,7 @@ Environment variables: `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `OPENAI_API_KE
 ## Acceptance criteria
 
 1. `joel check` on the fixture audio ("Yesterday he go to school, uh, and she don't like it. There is many people in the the room. I am agree with you.") flags the four grammar mistakes with timestamps inside the words' range, and does not flag "uh" or "the the" as grammar mistakes.
-2. `joel check --json` produces a document that reconstructs the terminal report with no further external calls.
+2. `joel check --json PATH` writes a document that reconstructs the terminal report, with or without `--show-uncertain` and `--better`, with no further external calls.
 3. `joel bench` runs all three transcribers over the recordings directory and prints the preservation table.
 4. Changing `--transcriber` changes no step after `transcribe`.
 
@@ -296,6 +319,8 @@ Architectural decisions live in [`docs/decisions/`](../decisions/README.md):
 - [ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md): each step's tool schema and instructions go to the provider's prompt cache, and the step's first block runs alone to write it.
 - [ADR-0010](../decisions/0010-default-model-chosen-by-precision-probe.md): `openai:gpt-6-luna` as the default model and 7 as the default block size, chosen with a precision probe.
 - [ADR-0011](../decisions/0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md): `openai-codex:gpt-6.1-terra` as the default model, run on the ChatGPT plan through the Codex CLI's login; supersedes ADR-0010.
+- [ADR-0013](../decisions/0013-prompts-as-files-users-can-override.md): prompts live in versioned files in the package, which a user can replace per run with `--prompt`.
+- [ADR-0014](../decisions/0014-naturalness-only-on-request-held-to-word-swaps.md): the natural version is asked for only with `--better` and held to word swaps by a deterministic guard; refines ADR-0005.
 
 Smaller choices, reversible in an afternoon:
 

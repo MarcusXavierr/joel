@@ -10,7 +10,7 @@ Joel is a command-line tool for people who speak English as a second language. Y
 ## What a report looks like
 
 ```
-$ joel check talk.m4a
+$ joel check talk.m4a --better
 
 00:12.0–00:15.1
   said:    There is many people in the room.
@@ -25,7 +25,7 @@ $ joel check talk.m4a
 Cost: $0.003 for 2 model calls (1563 input and 368 output tokens) with openai-codex:gpt-6.1-terra.
 ```
 
-Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls would cost at API prices. With the default model your ChatGPT plan covers them, so nothing is billed per token.
+Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. The `better:` lines appear only with `--better`: a `naturalness` change is a word a native speaker would swap even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls would cost at API prices. With the default model your ChatGPT plan covers them, so nothing is billed per token.
 
 Joel would rather miss a mistake than invent one. A report that flags things you said correctly teaches you to ignore it, so anything the transcription was unsure about stays hidden unless you ask for it with `--show-uncertain`. The report still tells you how many it hid.
 
@@ -107,8 +107,11 @@ Two models download the first time Joel needs them. The local transcriber downlo
 # Report the mistakes in a recording
 joel check talk.m4a
 
-# Use a cloud transcriber and keep the full result as JSON
-joel check talk.m4a --transcriber elevenlabs --json > talk.json
+# Also save the report as JSON
+joel check talk.m4a --json talk.json
+
+# Use a cloud transcriber, and see what a native speaker would say instead
+joel check talk.m4a --transcriber elevenlabs --better
 
 # Also show the mistakes Joel wasn't sure enough to report
 joel check talk.m4a --show-uncertain
@@ -121,7 +124,10 @@ joel check talk.m4a --show-uncertain
 | `--min-confidence` | `0.67` | How sure the transcription must be about a word before a mistake on it is reported |
 | `--show-uncertain` | off | Shows the mistakes that fell below that bar, marked as uncertain |
 | `--block-sentences` | `7` | How many sentences go to the language model in each call. Fewer means more calls and a higher cost |
-| `--json` | off | Prints everything as JSON: the transcript, the corrections, every mistake with the reason it was kept or held back, and the tokens and cost of the run. The terminal report can be rebuilt from it |
+| `--better` | off | Also shows the words a native speaker would swap, under `better:`. The model only writes this version when you ask. If it does more than swap a few words, Joel sends it back once and then drops it ([ADR-0014](docs/decisions/0014-naturalness-only-on-request-held-to-word-swaps.md)) |
+| `--json PATH` | none | Also writes the report to `PATH` as JSON: every sentence with a mistake, every mistake with its times and confidence and, if it was held back, why. Uncertain mistakes are in it even without `--show-uncertain`. It also has a hash of each prompt used and the tokens and cost of the run. The terminal report is rebuilt from this file |
+| `--verbose` | off | With `--json`, writes everything the run decided instead: the transcript, the dropped hesitations, every correction and every edit |
+| `--prompt NAME=FILE` | none | Sends the instructions in `FILE` instead of the built-in `NAME` prompt. Repeat it for several. See [Custom prompts](#custom-prompts) |
 
 There is a second command, for finding out which transcriber to trust:
 
@@ -142,15 +148,36 @@ Before you send a long recording through a paid model, you can ask what it would
 ```
 $ joel estimate talk.m4a
 talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
-openai-codex:gpt-6.1-terra: about $0.059 for 36 calls (28686 input and 6024 output tokens)
+openai-codex:gpt-6.1-terra: about $0.045 for 36 calls (26436 input and 3756 output tokens)
 Assumes 150 words per minute, 12 words per sentence and 7 sentences per call, with no prompt caching; a retried call costs extra.
 ```
 
-The estimate only looks at how long the recording is. Joel sends the sentences to the language model in blocks of 7, and each block costs two calls, one to set the hesitations aside and one to correct it. `--block-sentences` changes the block size here and in `joel check`. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
+The estimate only looks at how long the recording is. Joel sends the sentences to the language model in blocks of 7, and each block costs two calls, one to set the hesitations aside and one to correct it. `--block-sentences` changes the block size here and in `joel check`. `--better` prices the natural version too, which makes each correction longer: the same 10 minutes come to about $0.057. `--model` prices a different model, as long as [genai-prices](https://github.com/pydantic/genai-prices) knows it.
+
+### Custom prompts
+
+The instructions Joel sends the language model live in text files inside the package, one per prompt. `joel check --help` lists them:
+
+| Name | What it asks for |
+| --- | --- |
+| `disfluencies` | Which words are hesitations to set aside: "uh", repeated words, false starts |
+| `correct` | The grammatical version of each sentence |
+| `correct-natural` | The natural version too. Joel adds it to `correct` only with `--better` |
+
+To change one, start from the built-in text, edit it, and pass your file:
+
+```bash
+joel prompt correct > mine.md
+joel check talk.m4a --prompt correct=mine.md
+```
+
+The built-in `correct` prompt has a line that says only `$natural`. That is where `correct-natural` goes when you pass `--better`, and where nothing goes when you don't. Keep it in your file if you want `--better` to work; without it, Joel stops with an error before transcribing anything. Any other `$` word is an error too, and `$$` writes a literal `$`. The JSON report records a SHA-256 hash of every prompt a run used, so you can tell which text produced it.
+
+Everything measured about Joel, from the model probes in the decision records to the token rates `joel estimate` uses, was measured with the built-in prompts. Your file can make the report better or worse, and the estimate says so when you pass `--prompt`.
 
 ## Using Joel from another program
 
-Run `joel check <audio> --json` and read standard output. The JSON is the whole result of the run: the transcript, the corrections, every mistake with the reason it was kept or held back, and the tokens and cost. On an error Joel prints the reason to standard error and exits with 1. The Python modules inside the package aren't a stable API and can change in any release, so don't import them.
+Run `joel check <audio> --json result.json` and read the file. It holds the report: every sentence with a mistake, and every mistake with its times, its confidence and, if it was held back, why, plus the hash of each prompt used and the tokens and cost. Add `--verbose` and the file holds the whole result of the run instead, transcript and every correction included. Standard output keeps the human report either way. On an error Joel prints the reason to standard error and exits with 1. The Python modules inside the package aren't a stable API and can change in any release, so don't import them.
 
 ## Contributing
 

@@ -137,6 +137,23 @@ def test_estimate_reports_duration_words_and_cost(
     )
 
 
+def test_estimate_better_prices_the_natural_version_too(
+    tmp_path: Path,
+    fake_ffmpeg: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_ffmpeg(ONE_MINUTE_OF_PCM)
+    audio = str(tmp_path / "talk.m4a")
+
+    def output_tokens(*flags: str) -> int:
+        assert main(["estimate", audio, *flags]) == 0
+        found = re.search(r"and (\d+) output tokens", capsys.readouterr().out)
+        assert found is not None
+        return int(found[1])
+
+    assert output_tokens("--better") > output_tokens()
+
+
 def test_estimate_takes_the_block_size(
     tmp_path: Path,
     fake_ffmpeg: Callable[[str], None],

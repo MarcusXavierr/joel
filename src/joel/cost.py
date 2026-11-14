@@ -21,17 +21,18 @@ class TokenRate(NamedTuple):
     per_word: float
 
 
-# Measured on 2026-11-14 against openai-codex:gpt-6.1-terra with joel's prompts,
-# on blocks of 1 sentence (4 words) and 7 sentences (70 words); refit when a
-# prompt or the default model changes. Output includes the model's reasoning,
-# which varies from run to run, so each point is a three-run average.
+# Measured on 2026-11-14 against openai-codex:gpt-6.1-terra with joel's built-in
+# prompts, on blocks of 1 sentence (4 words) and 7 sentences (73 words); refit
+# when a prompt or the default model changes. Output includes the model's
+# reasoning, which can vary from run to run, so each point is a three-run
+# average.
 CLEANUP_INPUT = TokenRate(473, 6.4)
-CLEANUP_OUTPUT = TokenRate(17, 0.1)
-CORRECT_INPUT = TokenRate(479, 1.3)
-CORRECT_OUTPUT = TokenRate(26, 3.4)
+CLEANUP_OUTPUT = TokenRate(17, 0.0)
+CORRECT_INPUT = TokenRate(354, 1.3)
+CORRECT_OUTPUT = TokenRate(25, 2.0)
 # The correction step when --better also asks for the natural version.
-CORRECT_NATURAL_INPUT = CORRECT_INPUT
-CORRECT_NATURAL_OUTPUT = CORRECT_OUTPUT
+CORRECT_NATURAL_INPUT = TokenRate(476, 1.3)
+CORRECT_NATURAL_OUTPUT = TokenRate(27, 3.3)
 
 
 class PriceUnavailableError(Exception):

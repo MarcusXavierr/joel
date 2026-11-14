@@ -18,6 +18,8 @@ An accepted ADR is immutable. When a decision changes, do not edit the old recor
 | [0010](0010-default-model-chosen-by-precision-probe.md) | `openai:gpt-6-luna` as the default model and 7 as the default block size, chosen by a precision probe over 7 models | superseded by 0011 |
 | [0011](0011-default-model-gpt-6-1-terra-on-the-chatgpt-plan.md) | `openai-codex:gpt-6.1-terra` as the default model, run on the ChatGPT plan through the Codex CLI's login | accepted |
 | [0012](0012-download-the-spacy-model-on-first-use.md) | Download the pinned `en_core_web_sm` 3.8.0 from spaCy's GitHub release on first use, checked by sha256, so Joel installs from PyPI | accepted |
+| [0013](0013-prompts-as-files-users-can-override.md) | Prompts live in versioned `.md` files in the package; `--prompt NAME=FILE` replaces one per run, and each run records their hashes | accepted |
+| [0014](0014-naturalness-only-on-request-held-to-word-swaps.md) | The natural version is asked for only with `--better`, through its own schema, and a deterministic guard holds it to word swaps; refines 0005 | accepted |
 
 ## Adding one
 
