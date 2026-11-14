@@ -27,7 +27,8 @@ MAX_CONCURRENT_CALLS = 8
 class CheckedSentence(BaseModel):
     """One sentence and everything the pipeline decided about it."""
 
-    words: list[int]  # Word.index of every word split_sentences put in it
+    first_word: int  # Word.index of the sentence's first word
+    last_word: int  # and of its last; the sentence is every index in between
     dropped: list[int]  # Word.index of every disfluency, sorted
     correction: Correction | None  # None when every word was dropped; no call made
     edits: list[FilteredEdit]  # in diff_edits order
@@ -137,7 +138,8 @@ async def run_check(
         )
         checked.append(
             CheckedSentence(
-                words=sentence,
+                first_word=sentence[0],
+                last_word=sentence[-1],
                 dropped=clean.dropped,
                 correction=correction,
                 edits=filter_edits(edits, transcript.words, min_confidence),

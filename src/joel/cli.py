@@ -24,7 +24,7 @@ from joel.decode import SAMPLE_RATE, DecodeError, decode
 from joel.edits import load_annotator
 from joel.llm import BLOCK_SENTENCES, DEFAULT_MODEL, ModelAnswerError
 from joel.logs import configure_logging
-from joel.report import render
+from joel.report import build_report, render
 from joel.spacy_model import SpacyModelUnavailableError
 from joel.transcribers import TranscriberUnavailableError, load_transcriber
 
@@ -68,7 +68,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="also show the mistakes held back as uncertain",
     )
     check.add_argument(
-        "--json", action="store_true", help="print everything the run decided as JSON"
+        "--better",
+        action="store_true",
+        help="also show what a native speaker would say instead",
+    )
+    check.add_argument(
+        "--json",
+        type=Path,
+        metavar="PATH",
+        default=None,
+        help="also write the report as JSON to PATH",
+    )
+    check.add_argument(
+        "--verbose",
+        action="store_true",
+        help="with --json, write everything the run decided instead of the report",
     )
     check.set_defaults(run=_check)
 
@@ -111,6 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     args = parser.parse_args(argv)
+    if args.command == "check" and args.verbose and args.json is None:
+        check.error("--verbose works only with --json")
     # joel owns stdout and stderr; pydantic-ai's first-run banner would land in
     # the report.
     pydantic_ai.BANNER_ENABLED = False
@@ -146,6 +162,10 @@ def _check(args: argparse.Namespace) -> int:
     if not audio.is_file():
         print(f"joel: error: {audio} is not a file.", file=sys.stderr)
         return 1
+    saved: Path | None = args.json
+    if saved is not None and not saved.parent.is_dir():
+        print(f"joel: error: {saved.parent} is not a directory.", file=sys.stderr)
+        return 1
     try:
         # infer_model fails here on a missing API key, before any transcription.
         model = infer_model(args.model)
@@ -171,10 +191,19 @@ def _check(args: argparse.Namespace) -> int:
     ) as exc:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
-    if args.json:
-        print(result.model_dump_json(indent=2))
-    else:
-        print(render(result, show_uncertain=args.show_uncertain))
+    report = build_report(result)
+    # Printed before the file is written, so a paid run is never lost.
+    print(render(report, show_uncertain=args.show_uncertain, better=args.better))
+    if saved is not None:
+        document = result if args.verbose else report
+        try:
+            saved.write_text(document.model_dump_json(indent=2) + "\n")
+        except OSError as exc:
+            print(
+                f"joel: error: could not write {saved}: {exc.strerror}",
+                file=sys.stderr,
+            )
+            return 1
     return 0
 
 

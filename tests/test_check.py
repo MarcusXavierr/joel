@@ -23,7 +23,7 @@ from pydantic_ai.usage import RequestUsage
 from joel.check import CheckResult, run_check
 from joel.cli import main
 from joel.llm import BLOCK_SENTENCES
-from joel.report import render
+from joel.report import Report, build_report, render
 from joel.transcribers.openai import AudioTooLargeError
 from joel.transcript import Transcript, Word
 
@@ -258,7 +258,7 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
 
     assert result.sentences == []
     assert (result.requests, result.cost_usd) == (0, Decimal(0))
-    assert render(result, show_uncertain=False) == (
+    assert render(build_report(result), show_uncertain=False, better=False) == (
         "No mistakes found.\n\n"
         f"Cost: $0.000 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
     )
@@ -395,9 +395,11 @@ def cli_pipeline(
     return install
 
 
+@pytest.mark.parametrize("better", [False, True])
 @pytest.mark.parametrize("show_uncertain", [False, True])
-def test_the_json_rebuilds_the_terminal_report(
+def test_the_json_file_rebuilds_the_terminal_report(
     show_uncertain: bool,
+    better: bool,
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -405,36 +407,101 @@ def test_the_json_rebuilds_the_terminal_report(
     cli_pipeline(spoken_words(confidence={12: 0.5}))  # "is" is uncertain
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
-    flag = ["--show-uncertain"] if show_uncertain else []
-
-    assert main(["check", str(audio), *flag]) == 0
-    report = capsys.readouterr().out
-    assert main(["check", str(audio), "--json"]) == 0
     saved = tmp_path / "talk.json"
-    saved.write_text(capsys.readouterr().out)
+    flags = ["--show-uncertain"] * show_uncertain + ["--better"] * better
+
+    assert main(["check", str(audio), *flags, "--json", str(saved)]) == 0
+    terminal = capsys.readouterr().out
+
+    document = json.loads(saved.read_text())
+    assert "transcript" not in document
+    mistakes = [m for s in document["sentences"] for m in s["mistakes"]]
+    assert [m["original"] for m in mistakes if m["uncertain"]] == ["is"]
+    report = Report.model_validate(document)
+    shown = render(report, show_uncertain=show_uncertain, better=better)
+    assert shown + "\n" == terminal
+
+
+def test_verbose_writes_everything_the_run_decided(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    saved = tmp_path / "talk.json"
+
+    assert main(["check", str(audio), "--json", str(saved), "--verbose"]) == 0
 
     result = CheckResult.model_validate_json(saved.read_text())
-    assert render(result, show_uncertain=show_uncertain) + "\n" == report
+    assert [w.text for w in result.transcript.words] == [w.text for w in spoken_words()]
+    assert [(s.first_word, s.last_word) for s in result.sentences] == [
+        (0, 10),
+        (11, 18),
+        (19, 23),
+    ]
+    assert capsys.readouterr().out.startswith("00:00.0–00:05.4\n  said:")
+
+
+def test_verbose_needs_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["check", str(tmp_path), "--verbose"])
+
+    assert exited.value.code == 2
+    assert "--verbose works only with --json" in capsys.readouterr().err
+
+
+def test_a_json_path_in_a_missing_folder_stops_the_run_before_transcribing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def no_transcriber(name: str) -> FakeTranscriber:
+        raise AssertionError("transcribed before checking the JSON path")
+
+    monkeypatch.setattr("joel.cli.load_transcriber", no_transcriber)
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    folder = tmp_path / "nope"
+
+    assert main(["check", str(audio), "--json", str(folder / "talk.json")]) == 1
+    assert capsys.readouterr().err == f"joel: error: {folder} is not a directory.\n"
+
+
+def test_a_json_file_that_cannot_be_written_still_prints_the_report(
+    cli_pipeline: Callable[[Sequence[Word]], None],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_pipeline(spoken_words())
+    audio = tmp_path / "talk.m4a"
+    audio.write_bytes(b"")
+    taken = tmp_path / "taken"
+    taken.mkdir()
+
+    assert main(["check", str(audio), "--json", str(taken)]) == 1
+    out, err = capsys.readouterr()
+    assert "  said:" in out
+    assert err == f"joel: error: could not write {taken}: Is a directory\n"
 
 
 def test_the_model_threshold_and_block_flags_reach_the_run(
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_pipeline(spoken_words(confidence={12: 0.5}))  # "is", exactly at 0.5
     audio = tmp_path / "talk.m4a"
     audio.write_bytes(b"")
+    saved = tmp_path / "talk.json"
 
-    flags = ["--model", "nope:nothing", "--min-confidence", "0.5", "--json"]
-    flags += ["--block-sentences", "1"]
+    flags = ["--model", "nope:nothing", "--min-confidence", "0.5"]
+    flags += ["--block-sentences", "1", "--json", str(saved)]
     assert main(["check", str(audio), *flags]) == 0
 
-    result = CheckResult.model_validate_json(capsys.readouterr().out)
-    assert result.model == "nope:nothing"
-    assert result.requests == 6  # three sentences, one call each per step
-    assert result.cost_usd is None  # genai-prices can't price it; the run goes on
-    assert all(f.uncertain is None for s in result.sentences for f in s.edits)
+    report = Report.model_validate_json(saved.read_text())
+    assert report.model == "nope:nothing"
+    assert report.requests == 6  # three sentences, one call each per step
+    assert report.cost_usd is None  # genai-prices can't price it; the run goes on
+    assert [m.uncertain for s in report.sentences for m in s.mistakes] == [None] * 4
 
 
 def test_check_prints_no_banner_where_pydantic_ai_would_show_one(
@@ -648,20 +715,25 @@ AUDIO = Path(__file__).parent / "fixtures" / "audio" / "acceptance.wav"
 def test_check_flags_the_four_mistakes_in_the_recording(
     monkeypatch: pytest.MonkeyPatch,
     annotator: Annotator,
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("joel.cli.infer_model", lambda name: PipelineModel().model)
     monkeypatch.setattr("joel.cli.load_annotator", lambda: annotator)
+    saved = tmp_path / "talk.json"
 
-    assert main(["check", str(AUDIO), "--json"]) == 0
+    assert main(["check", str(AUDIO), "--json", str(saved), "--verbose"]) == 0
 
-    result = CheckResult.model_validate_json(capsys.readouterr().out)
+    report = capsys.readouterr().out
+    result = CheckResult.model_validate_json(saved.read_text())
     by_index = {w.index: w for w in result.transcript.words}
     disfluent = {w.index for w in result.transcript.words if w.text in {"uh,", "the"}}
     assert len(disfluent) == 3
     kept = []
     for sentence in result.sentences:
-        spoken = [by_index[i] for i in sentence.words]
+        spoken = [
+            by_index[i] for i in range(sentence.first_word, sentence.last_word + 1)
+        ]
         for f in sentence.edits:
             assert disfluent.isdisjoint(f.edit.words)
             if f.edit.category != "grammar" or f.uncertain is not None:
@@ -682,7 +754,8 @@ def test_check_flags_the_four_mistakes_in_the_recording(
         ("is", "are", ["is"]),
         ("am", "", ["am"]),
     ]
-    report = render(result, show_uncertain=False)
+    shown = render(build_report(result), show_uncertain=False, better=False)
+    assert report == shown + "\n"
     entries = report.split("\n\n")[:-1]  # the cost line closes the report
     assert [e.count("  said:") for e in entries] == [1, 1, 1]
     first = entries[0].splitlines()
