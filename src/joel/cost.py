@@ -58,7 +58,10 @@ def price(
             f"'{model}' is not a Pydantic AI model string such as "
             "'anthropic:claude-opus-5-5'."
         )
-    totals = (input_tokens, cache_read_tokens, cache_write_tokens, output_tokens)
+    # Spread the uncached input, not the total, so no call ends up with more
+    # cached tokens than input tokens.
+    uncached = input_tokens - cache_read_tokens - cache_write_tokens
+    totals = (uncached, cache_read_tokens, cache_write_tokens, output_tokens)
     calls = Counter(
         tuple(_share(tokens, requests, call) for tokens in totals)
         for call in range(requests)
@@ -69,7 +72,7 @@ def price(
                 count
                 * genai_prices.calc_price(
                     genai_prices.Usage(
-                        input_tokens=call_input,
+                        input_tokens=call_uncached + call_read + call_write,
                         cache_read_tokens=call_read,
                         cache_write_tokens=call_write,
                         output_tokens=call_output,
@@ -77,7 +80,7 @@ def price(
                     name,
                     provider_id=provider,
                 ).total_price
-                for (call_input, call_read, call_write, call_output), count in (
+                for (call_uncached, call_read, call_write, call_output), count in (
                     calls.items()
                 )
             ),

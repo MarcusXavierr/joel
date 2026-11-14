@@ -35,6 +35,17 @@ def test_tokens_written_to_the_cache_cost_more_however_the_calls_split_them() ->
     assert written == Decimal(5)
 
 
+def test_a_fully_cached_run_prices_however_the_calls_split_it() -> None:
+    # Spread separately over 3 calls, 5 read and 5 written tokens would put 4
+    # cached tokens in a call holding only 3 input tokens.
+    model = "anthropic:claude-opus-5-5"
+    tokens = {"cache_read_tokens": 5, "cache_write_tokens": 5}
+
+    assert price(model, 10, 0, requests=3, **tokens) == price(
+        model, 10, 0, requests=1, **tokens
+    )
+
+
 def test_many_small_requests_never_reach_a_long_context_price() -> None:
     # Sonnet 4.5 charges more per token once one request passes 200k input
     # tokens. A run's 300k tokens are spread over many short requests.

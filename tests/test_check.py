@@ -417,7 +417,7 @@ def test_the_json_rebuilds_the_terminal_report(
     assert render(result, show_uncertain=show_uncertain) + "\n" == report
 
 
-def test_the_model_and_threshold_flags_reach_the_run(
+def test_the_model_threshold_and_block_flags_reach_the_run(
     cli_pipeline: Callable[[Sequence[Word]], None],
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -427,10 +427,12 @@ def test_the_model_and_threshold_flags_reach_the_run(
     audio.write_bytes(b"")
 
     flags = ["--model", "nope:nothing", "--min-confidence", "0.5", "--json"]
+    flags += ["--block-sentences", "1"]
     assert main(["check", str(audio), *flags]) == 0
 
     result = CheckResult.model_validate_json(capsys.readouterr().out)
     assert result.model == "nope:nothing"
+    assert result.requests == 6  # three sentences, one call each per step
     assert result.cost_usd is None  # genai-prices can't price it; the run goes on
     assert all(f.uncertain is None for s in result.sentences for f in s.edits)
 
