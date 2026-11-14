@@ -4,10 +4,12 @@ from decimal import Decimal
 
 from joel.check import CheckResult
 from joel.confidence import FilteredEdit
-from joel.correct import Correction
+from joel.edits import Edit
 from joel.transcript import Word
 
 _NO_TIME = "--:--.-–--:--.-"
+_NO_START = "--:--.-"
+_INDENT = " " * 11
 
 
 def render(result: CheckResult, *, show_uncertain: bool) -> str:
@@ -40,14 +42,30 @@ def render(result: CheckResult, *, show_uncertain: bool) -> str:
         correction = sentence.correction
         if correction is None:
             continue  # every word was dropped, so nothing was diffed
-        dropped = set(sentence.dropped)
-        said = " ".join(by_index[i].text for i in sentence.words if i not in dropped)
+        shown = []
         for filtered in sorted(sentence.edits, key=lambda f: f.edit.words[0]):
             if filtered.uncertain is not None and not show_uncertain:
                 hidden += 1
-                continue
-            time = _span([by_index[i] for i in filtered.edit.words]) if timed else None
-            entries.append(_entry(filtered, said, correction, time))
+            else:
+                shown.append(filtered)
+        if not shown:
+            continue
+        dropped = set(sentence.dropped)
+        said = " ".join(by_index[i].text for i in sentence.words if i not in dropped)
+        lines = [_span([by_index[i] for i in sentence.words])] if timed else []
+        lines.append(f"  said:    {said}")
+        width = max(len(_change(f.edit)) for f in shown)
+        for category, fixed in (
+            ("grammar", f"  correct: {correction.grammatical}"),
+            ("naturalness", f"  better:  {correction.natural}"),
+        ):
+            edits = [f for f in shown if f.edit.category == category]
+            if edits:
+                lines.append(fixed)
+            for filtered in edits:
+                when = [by_index[i] for i in filtered.edit.words]
+                lines += _change_lines(filtered, width, _start(when) if timed else None)
+        entries.append("\n".join(lines))
 
     tail = []
     if hidden:
@@ -64,29 +82,25 @@ def render(result: CheckResult, *, show_uncertain: bool) -> str:
     return "\n\n".join(blocks)
 
 
-def _entry(
-    filtered: FilteredEdit, said: str, correction: Correction, time: str | None
-) -> str:
+def _change(edit: Edit) -> str:
+    return f"{edit.original or '∅'} → {edit.correction or '∅'}"
+
+
+def _change_lines(filtered: FilteredEdit, width: int, start: str | None) -> list[str]:
     edit = filtered.edit
-    if edit.category == "grammar":
-        header = f"{edit.type:<12} grammar"
-        fixed = f"  correct: {correction.grammatical}"
-    else:
-        header = "naturalness"
-        fixed = f"  better:  {correction.natural}"
-    if time is not None:
-        header = f"{time}  {header}"
+    label = f"{edit.type:<12} grammar" if edit.category == "grammar" else "naturalness"
     if filtered.uncertain is not None:
-        header += "  uncertain"
-    lines = [
-        header,
-        f"  said:    {said}",
-        fixed,
-        f"           {edit.original or '∅'} → {edit.correction or '∅'}",
-    ]
+        label += "  uncertain"
+    when = f"{start}  " if start is not None else ""
+    lines = [f"{_INDENT}{when}{_change(edit).ljust(width)}  {label}"]
     if filtered.uncertain is not None:
-        lines.append(f"  unsure:  {filtered.uncertain}")
-    return "\n".join(lines)
+        lines.append(f"{_INDENT}unsure:  {filtered.uncertain}")
+    return lines
+
+
+def _start(words: list[Word]) -> str:
+    starts = [w.start_ms for w in words if w.start_ms is not None]
+    return _clock(min(starts)) if len(starts) == len(words) else _NO_START
 
 
 def _span(words: list[Word]) -> str:

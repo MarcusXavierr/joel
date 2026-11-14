@@ -79,22 +79,45 @@ def result(
     )
 
 
-GRAMMAR = """\
-00:12.4–00:12.7  R:VERB:SVA   grammar
+ENTRY = """\
+00:12.0–00:15.1
   said:    There is many people in the room.
   correct: There are many people in the room.
-           is → are"""
-NATURALNESS = """\
-00:12.8–00:13.1  naturalness
-  said:    There is many people in the room.
+           00:12.4  is → are         R:VERB:SVA   grammar
   better:  There are a lot of people in the room.
-           many → a lot of"""
+           00:12.8  many → a lot of  naturalness"""
 COST = f"Cost: $0.07 for 2 model calls (200 input and 20 output tokens) with {MODEL}."
 
 
-def test_each_mistake_shows_when_it_was_said_and_its_correction() -> None:
-    assert render(result(), show_uncertain=False) == (
-        f"{GRAMMAR}\n\n{NATURALNESS}\n\n{COST}"
+def test_each_sentence_shows_its_span_and_when_each_mistake_was_said() -> None:
+    assert render(result(), show_uncertain=False) == f"{ENTRY}\n\n{COST}"
+
+
+def test_a_sentence_with_two_mistakes_is_printed_once() -> None:
+    checked = result()
+    sentence = checked.sentences[0]
+    assert sentence.correction is not None
+    sentence.correction.grammatical = "There are many people in the rooms."
+    room = Edit(
+        category="grammar",
+        type="R:NOUN:NUM",
+        original="room",
+        correction="rooms",
+        words=[7],
+    )
+    # Later mistake first, as if diffed first; the report follows spoken order.
+    sentence.edits = [
+        FilteredEdit(edit=room, confidence=0.95, uncertain=None),
+        sentence.edits[0],
+    ]
+
+    assert render(checked, show_uncertain=False) == (
+        "00:12.0–00:15.1\n"
+        "  said:    There is many people in the room.\n"
+        "  correct: There are many people in the rooms.\n"
+        "           00:12.4  is → are      R:VERB:SVA   grammar\n"
+        "           00:14.8  room → rooms  R:NOUN:NUM   grammar\n\n"
+        f"{COST}"
     )
 
 
@@ -103,11 +126,11 @@ def test_a_transcriber_without_confidence_is_noted_once_at_the_top() -> None:
 
     assert report == (
         "The parakeet transcriber gives no confidence scores, so no mistake was "
-        f"held back as uncertain.\n\n{GRAMMAR}\n\n{NATURALNESS}\n\n{COST}"
+        f"held back as uncertain.\n\n{ENTRY}\n\n{COST}"
     )
 
 
-def test_a_transcriber_without_timestamps_drops_the_time_column() -> None:
+def test_a_transcriber_without_timestamps_drops_the_times() -> None:
     report = render(
         result(transcriber="openai", timestamps=False), show_uncertain=False
     )
@@ -115,14 +138,11 @@ def test_a_transcriber_without_timestamps_drops_the_time_column() -> None:
     assert report == (
         "The openai transcriber gives no word timestamps, so mistakes are listed "
         "without times.\n\n"
-        "R:VERB:SVA   grammar\n"
         "  said:    There is many people in the room.\n"
         "  correct: There are many people in the room.\n"
-        "           is → are\n\n"
-        "naturalness\n"
-        "  said:    There is many people in the room.\n"
+        "           is → are         R:VERB:SVA   grammar\n"
         "  better:  There are a lot of people in the room.\n"
-        "           many → a lot of\n\n"
+        "           many → a lot of  naturalness\n\n"
         f"{COST}"
     )
 
@@ -131,7 +151,10 @@ def test_an_uncertain_mistake_is_hidden_and_counted() -> None:
     report = render(result(uncertain=UNSURE), show_uncertain=False)
 
     assert report == (
-        f"{NATURALNESS}\n\n"
+        "00:12.0–00:15.1\n"
+        "  said:    There is many people in the room.\n"
+        "  better:  There are a lot of people in the room.\n"
+        "           00:12.8  many → a lot of  naturalness\n\n"
         "1 uncertain mistake hidden; --show-uncertain shows it.\n"
         f"{COST}"
     )
@@ -141,12 +164,14 @@ def test_show_uncertain_marks_the_mistake_and_says_why() -> None:
     report = render(result(uncertain=UNSURE), show_uncertain=True)
 
     assert report == (
-        "00:12.4–00:12.7  R:VERB:SVA   grammar  uncertain\n"
+        "00:12.0–00:15.1\n"
         "  said:    There is many people in the room.\n"
         "  correct: There are many people in the room.\n"
-        "           is → are\n"
-        f"  unsure:  {UNSURE}\n\n"
-        f"{NATURALNESS}\n\n{COST}"
+        "           00:12.4  is → are         R:VERB:SVA   grammar  uncertain\n"
+        f"           unsure:  {UNSURE}\n"
+        "  better:  There are a lot of people in the room.\n"
+        "           00:12.8  many → a lot of  naturalness\n\n"
+        f"{COST}"
     )
 
 
@@ -168,23 +193,19 @@ def test_a_sentence_without_mistakes_reports_none() -> None:
     assert render(checked, show_uncertain=False) == f"No mistakes found.\n\n{COST}"
 
 
-def test_entries_follow_spoken_order_whatever_the_edit_order() -> None:
+def test_a_word_without_a_time_gets_placeholder_times() -> None:
     checked = result()
-    checked.sentences[0].edits.reverse()  # naturalness first, as if diffed first
+    checked.transcript.words[1].start_ms = None  # "is"
 
     assert render(checked, show_uncertain=False) == (
-        f"{GRAMMAR}\n\n{NATURALNESS}\n\n{COST}"
+        "--:--.-–--:--.-\n"
+        "  said:    There is many people in the room.\n"
+        "  correct: There are many people in the room.\n"
+        "           --:--.-  is → are         R:VERB:SVA   grammar\n"
+        "  better:  There are a lot of people in the room.\n"
+        "           00:12.8  many → a lot of  naturalness\n\n"
+        f"{COST}"
     )
-
-
-def test_a_word_without_a_time_gets_a_placeholder_span() -> None:
-    checked = result()
-    checked.transcript.words[1].end_ms = None  # "is"
-
-    report = render(checked, show_uncertain=False)
-
-    assert report.startswith("--:--.-–--:--.-  R:VERB:SVA   grammar\n")
-    assert f"\n\n{NATURALNESS}\n\n" in report
 
 
 def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:

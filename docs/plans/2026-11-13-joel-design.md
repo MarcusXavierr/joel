@@ -178,24 +178,24 @@ Edit confidence = minimum confidence of the original words in the span; for an i
 Terminal:
 
 ```
-00:12.4–00:13.1  R:VERB:SVA   grammar
+00:12.0–00:15.1
   said:    There is many people in the room.
   correct: There are many people in the room.
-           is → are
+           00:12.4  is → are  R:VERB:SVA   grammar
 
-00:41.0–00:41.6  naturalness
+00:40.6–00:42.0
   said:    I make a party last week.
   better:  I threw a party last week.
-           make → threw
+           00:41.0  make → threw  naturalness
 
 Cost: $0.02 for 6 model calls (3204 input and 144 output tokens) with anthropic:claude-opus-5-5.
 ```
 
-Entries come in spoken order, one per edit, so a sentence with two mistakes shows up twice. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". The arrow line is the edit itself, with `∅` on the empty side of an insertion or a deletion. When no entry is left to show, the report says `No mistakes found.`
+There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
 
-When the transcriber gives no timestamps (`openai`), the time column is left out and the report says so once at the top. A transcriber that gives no confidence scores gets a note at the top too, since nothing could be held back as uncertain. An edit on a word that lacks a time, in a transcript that has times, shows `--:--.-–--:--.-`.
+When the transcriber gives no timestamps (`openai`), the header and the start times are left out and the report says so once at the top. A transcriber that gives no confidence scores gets a note at the top too, since nothing could be held back as uncertain. In a transcript that has times, a sentence with a word that lacks one gets the header `--:--.-–--:--.-`, and a change on such a word starts with `--:--.-`.
 
-Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` With `--show-uncertain` they appear in place, with `uncertain` at the end of the header and an `unsure:` line that names the least confident word and its score.
+Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` With `--show-uncertain` they appear in place, with `uncertain` at the end of their change line and an `unsure:` line under it that names the least confident word and its score.
 
 The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included. If `genai-prices` has no price for the model, the run still succeeds and the line says the cost is unknown, with the call and token counts.
 

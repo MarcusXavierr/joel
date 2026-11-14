@@ -3,6 +3,7 @@
 import asyncio
 import gc
 import json
+import re
 import warnings
 from collections.abc import Callable, Sequence
 from decimal import Decimal
@@ -492,4 +493,20 @@ def test_check_flags_the_four_mistakes_in_the_recording(
         ("is", "are", ["is"]),
         ("am", "", ["am"]),
     ]
-    assert render(result, show_uncertain=False).count(" grammar\n") == 4
+    report = render(result, show_uncertain=False)
+    entries = report.split("\n\n")[:-1]  # the cost line closes the report
+    assert [e.count("  said:") for e in entries] == [1, 1, 1]
+    first = entries[0].splitlines()
+    assert re.fullmatch(r"\d\d:\d\d\.\d–\d\d:\d\d\.\d", first[0])
+    assert first[1].startswith("  said:    Yesterday he go to school,")
+    assert first[2].startswith("  correct: ")
+    assert all(line.startswith(" " * 11) for line in first[3:])
+    changes = [line.split(maxsplit=1) for line in first[3:]]
+    assert [re.sub(r"\s+", " ", change) for _, change in changes] == [
+        "go → went R:VERB:TENSE grammar",
+        "do → does R:VERB:SVA grammar",
+    ]
+    clocks = [clock for clock, _ in changes]
+    assert all(re.fullmatch(r"\d\d:\d\d\.\d", clock) for clock in clocks)
+    assert clocks[0] < clocks[1]
+    assert report.count(" grammar\n") == 4

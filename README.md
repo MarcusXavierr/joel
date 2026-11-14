@@ -12,20 +12,20 @@ Joel is a command-line tool for people who speak English as a second language. Y
 ```
 $ joel check talk.m4a
 
-00:12.4–00:13.1  R:VERB:SVA   grammar
+00:12.0–00:15.1
   said:    There is many people in the room.
   correct: There are many people in the room.
-           is → are
+           00:12.4  is → are  R:VERB:SVA   grammar
 
-00:41.0–00:41.6  naturalness
+00:40.6–00:42.0
   said:    I make a party last week.
   better:  I threw a party last week.
-           make → threw
+           00:41.0  make → threw  naturalness
 
 Cost: $0.02 for 6 model calls (3204 input and 144 output tokens) with anthropic:claude-opus-5-5.
 ```
 
-Each entry starts with where to find the sentence in the recording. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` entry is a sentence that is grammatical but that a native speaker wouldn't say that way. The `said:` line leaves out the hesitations Joel set aside, and the line under the correction shows exactly which words changed. The last line is what the language model calls cost for this recording.
+Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls cost for this recording.
 
 Joel would rather miss a mistake than invent one. A report that flags things you said correctly teaches you to ignore it, so anything the transcription was unsure about stays hidden unless you ask for it with `--show-uncertain`. The report still tells you how many it hid.
 
