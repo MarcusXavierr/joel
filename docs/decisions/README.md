@@ -14,6 +14,7 @@ An accepted ADR is immutable. When a decision changes, do not edit the old recor
 | [0006](0006-spacy-tokenization-with-offset-mapping.md) | spaCy tokenization in ERRANT, mapped to ASR words by character offset | accepted |
 | [0007](0007-word-timestamps-optional-in-transcriber-contract.md) | Word timestamps optional in the `Word` contract, so `gpt-transcribe` fits behind the interface | accepted |
 | [0008](0008-llm-steps-run-over-blocks-of-sentences.md) | Cleanup and correction run over numbered blocks of up to N sentences per call (`--block-sentences`, default 6) | accepted |
+| [0009](0009-cache-the-instructions-and-warm-up-each-step.md) | Cache each step's tool schema and instructions, with worked examples past the minimum, and run each step's first block alone to write the cache | accepted |
 
 ## Adding one
 

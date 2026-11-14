@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -150,7 +151,7 @@ def test_estimate_takes_the_block_size(
     assert "12 words per sentence and 1 sentence per call," in out
 
 
-def test_a_cost_below_a_cent_says_so(
+def test_a_cost_below_a_cent_shows_three_decimals(
     tmp_path: Path,
     fake_ffmpeg: Callable[[str], None],
     capsys: pytest.CaptureFixture[str],
@@ -160,9 +161,23 @@ def test_a_cost_below_a_cent_says_so(
     status = main(["estimate", str(tmp_path / "talk.m4a")])
 
     assert status == 0
-    assert (
-        "anthropic:claude-opus-5-5: under $0.01 for 2 calls" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert re.search(r"anthropic:claude-opus-5-5: about \$0\.00[1-9] for 2 calls", out)
+
+
+def test_a_cost_below_a_tenth_of_a_cent_says_so(
+    tmp_path: Path,
+    fake_ffmpeg: Callable[[str], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake_ffmpeg("exec /usr/bin/head -c 64000 /dev/zero")  # one second
+
+    status = main(
+        ["estimate", str(tmp_path / "talk.m4a"), "--model", "openai:gpt-6-luna"]
     )
+
+    assert status == 0
+    assert "openai:gpt-6-luna: under $0.001 for 2 calls" in capsys.readouterr().out
 
 
 def test_unreadable_audio_is_an_error(

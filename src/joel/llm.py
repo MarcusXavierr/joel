@@ -3,6 +3,7 @@
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models import Model
+from pydantic_ai.settings import CacheConfig, ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 DEFAULT_MODEL = "anthropic:claude-opus-5-5"
@@ -37,6 +38,9 @@ async def ask[D, T](
             model=model,
             usage=usage,
             usage_limits=UsageLimits(request_limit=None),
+            # Cache only the tool schema and instructions: every call shares
+            # them, and no conversation is ever continued.
+            model_settings=ModelSettings(cache=CacheConfig(messages=False)),
         )
     except UnexpectedModelBehavior as exc:
         raise ModelAnswerError(

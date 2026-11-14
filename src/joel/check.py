@@ -1,7 +1,9 @@
 """The whole pipeline: a recording in; every mistake and what finding it cost out."""
 
 import asyncio
+import functools
 import itertools
+from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -40,6 +42,8 @@ class CheckResult(BaseModel):
     requests: int  # model calls, retries included
     input_tokens: int
     output_tokens: int
+    cache_read_tokens: int  # part of input_tokens, read from the prompt cache
+    cache_write_tokens: int  # part of input_tokens, written to the prompt cache
     cost_usd: Decimal | None  # None when genai-prices can't price `model`
 
 
@@ -55,10 +59,11 @@ async def run_check(
 ) -> CheckResult:
     """Transcribe `audio` and run every later step over it.
 
-    The model calls run concurrently, at most MAX_CONCURRENT_CALLS at a time,
-    each over up to `block_sentences` sentences: every cleanup first, then
-    every correction. The first call that fails raises its error as is.
-    `model_name` is what gets priced and recorded.
+    The model calls go over up to `block_sentences` sentences each: every
+    cleanup first, then every correction. Each step runs its first block alone,
+    so the rest read the prompt cache it writes; then at most
+    MAX_CONCURRENT_CALLS at a time. The first call that fails raises its error
+    as is. `model_name` is what gets priced and recorded.
     """
     transcript = transcriber.transcribe(audio)
     by_index = {w.index: w for w in transcript.words}
@@ -84,11 +89,11 @@ async def run_check(
             for sentence in block
         ]
 
-    blocks = await asyncio.gather(
-        *(
-            cleanup(block)
+    blocks = await _first_alone(
+        [
+            functools.partial(cleanup, block)
             for block in itertools.batched(sentences, block_sentences, strict=False)
-        )
+        ]
     )
     cleaned = [clean for block in blocks for clean in block]
     texts = [" ".join(w.text for w in c.words) for c in cleaned]
@@ -106,13 +111,12 @@ async def run_check(
                 usage=usage,
             )
 
-    answers = await asyncio.gather(
-        *(
-            fix(ks)
-            for ks in itertools.batched(
-                range(len(spoken)), block_sentences, strict=False
-            )
-        )
+    positions = range(len(spoken))
+    answers = await _first_alone(
+        [
+            functools.partial(fix, ks)
+            for ks in itertools.batched(positions, block_sentences, strict=False)
+        ]
     )
     corrections = dict(
         zip(spoken, (c for block in answers for c in block), strict=True)
@@ -143,6 +147,8 @@ async def run_check(
             usage.input_tokens,
             usage.output_tokens,
             requests=usage.requests,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
         )
     except PriceUnavailableError:
         cost = None
@@ -153,5 +159,19 @@ async def run_check(
         requests=usage.requests,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
+        cache_read_tokens=usage.cache_read_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
         cost_usd=cost,
     )
+
+
+async def _first_alone[T](calls: Sequence[Callable[[], Awaitable[T]]]) -> list[T]:
+    """Run the first call by itself, then the rest together, keeping their order.
+
+    The first call writes the step's instructions to the provider's prompt
+    cache; calls started together with it would all miss and pay the write.
+    """
+    if not calls:
+        return []
+    first = await calls[0]()
+    return [first, *await asyncio.gather(*(call() for call in calls[1:]))]

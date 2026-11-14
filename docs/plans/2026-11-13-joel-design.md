@@ -143,7 +143,7 @@ Deterministic validation: an index outside the passage is an error and the call 
 
 ### 4. `correct` (LLM)
 
-One call per block of up to `--block-sentences` clean sentences (default 6), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Structured output, one item per number:
+One call per block of up to `--block-sentences` clean sentences (default 6), numbered, with the sentence before and after the block as context. Only the numbered sentences are corrected, each on its own ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)). Both LLM steps ask the provider to cache their tool schema and instructions, which end in worked examples so they pass Anthropic's 512-token minimum, and each step runs its first block alone so the rest read that cache ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)). Structured output, one item per number:
 
 ```json
 {"sentences": [{"number": 1,
@@ -192,7 +192,7 @@ Terminal:
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: under $0.01 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
+Cost: $0.008 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
 ```
 
 There is one entry per sentence that has an edit to show, in spoken order, so a sentence with two mistakes appears once. The header is the time span of the whole sentence, dropped words included. `said:` is the clean sentence: the words `strip_disfluencies` dropped are left out, so "in the the room" reads "in the room". `correct:` is the grammatical version, followed by one line per grammar edit, and `better:` is the natural version, followed by one line per naturalness edit; a section with nothing to show is left out. Each change line starts with when its first word was said, then the edit itself, with `∅` on the empty side of an insertion or a deletion, then its ERRANT type and category. When no entry is left to show, the report says `No mistakes found.`
@@ -201,9 +201,9 @@ When the transcriber gives no timestamps (`openai`), the header and the start ti
 
 Uncertain edits (step 6) are hidden by default, and a line above the cost counts them: `2 uncertain mistakes hidden; --show-uncertain shows them.` With `--show-uncertain` they appear in place, with `uncertain` at the end of their change line and an `unsure:` line under it that names the least confident word and its score.
 
-The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included. If `genai-prices` has no price for the model, the run still succeeds and the line says the cost is unknown, with the call and token counts.
+The report ends with what the run's language model calls cost in US dollars, priced from the input and output tokens they used, retries included. Input read from the prompt cache is priced at the cache's rate, and the line says how much of the input that was: `(1650 read from cache)`. If `genai-prices` has no price for the model, the run still succeeds and the line says the cost is unknown, with the call and token counts.
 
-`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's model calls, input and output tokens, and its cost in US dollars (`null` when it can't be priced). The terminal report is rebuilt from this document alone, so `--show-uncertain` doesn't change it.
+`--json`: raw transcript, sentences, dropped indices, LLM corrections, every edit (including filtered ones with the reason), the run's model calls, input and output tokens with the part read from and written to the prompt cache, and its cost in US dollars (`null` when it can't be priced). The terminal report is rebuilt from this document alone, so `--show-uncertain` doesn't change it.
 
 ## `joel bench`
 
@@ -293,6 +293,7 @@ Architectural decisions live in [`docs/decisions/`](../decisions/README.md):
 - [ADR-0006](../decisions/0006-spacy-tokenization-with-offset-mapping.md): spaCy tokenization with offset mapping.
 - [ADR-0007](../decisions/0007-word-timestamps-optional-in-transcriber-contract.md): word timestamps optional in the `Word` contract, so `gpt-transcribe` fits behind the interface.
 - [ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md): cleanup and correction run over numbered blocks of sentences, one call per block.
+- [ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md): each step's tool schema and instructions go to the provider's prompt cache, and the step's first block runs alone to write it.
 
 Smaller choices, reversible in an afternoon:
 
@@ -301,6 +302,7 @@ Smaller choices, reversible in an afternoon:
 | `--block-sentences` defaults to 6 | Enough to share one prompt across most of a minute of speech, small enough that a retry repeats little ([ADR-0008](../decisions/0008-llm-steps-run-over-blocks-of-sentences.md)) |
 | Low-confidence edits hidden by default | Precision over recall |
 | At most 8 model calls in flight, every cleanup before any correction | A correction reads its neighbors' clean text, so cleanup has to finish first; 8 keeps long recordings fast while keeping each burst of requests small |
+| Each step's first block runs alone | It writes the prompt cache that the step's other blocks read ([ADR-0009](../decisions/0009-cache-the-instructions-and-warm-up-each-step.md)) |
 | `claude-opus-5-5` as the default model | Available on my account; swappable via `--model` |
 | Timestamps only, no clips | Clipping waits until the pipeline proves it's right |
 | No chunking of our own | Parakeet segments internally at ≤30 s and cloud providers take whole files; measured no gain from external cuts |

@@ -36,13 +36,20 @@ class PriceUnavailableError(Exception):
 
 
 def price(
-    model: str, input_tokens: int, output_tokens: int, *, requests: int
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    requests: int,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> Decimal:
     """Price tokens spent over a number of model calls, in US dollars.
 
-    The tokens are priced as if spread evenly over the calls. Some models charge
-    more per token once a single request passes a size threshold: a whole run
-    priced as one request would cross it, while Joel's sentence-sized calls
+    `input_tokens` includes the cached ones, which are priced at the cache's
+    rates. The tokens are priced as if spread evenly over the calls. Some models
+    charge more per token once a single request passes a size threshold: a whole
+    run priced as one request would cross it, while Joel's block-sized calls
     never do. Zero calls cost nothing.
     """
     provider, sep, name = model.partition(":")
@@ -51,8 +58,9 @@ def price(
             f"'{model}' is not a Pydantic AI model string such as "
             "'anthropic:claude-opus-5-5'."
         )
+    totals = (input_tokens, cache_read_tokens, cache_write_tokens, output_tokens)
     calls = Counter(
-        (_share(input_tokens, requests, call), _share(output_tokens, requests, call))
+        tuple(_share(tokens, requests, call) for tokens in totals)
         for call in range(requests)
     )
     try:
@@ -61,12 +69,17 @@ def price(
                 count
                 * genai_prices.calc_price(
                     genai_prices.Usage(
-                        input_tokens=call_input, output_tokens=call_output
+                        input_tokens=call_input,
+                        cache_read_tokens=call_read,
+                        cache_write_tokens=call_write,
+                        output_tokens=call_output,
                     ),
                     name,
                     provider_id=provider,
                 ).total_price
-                for (call_input, call_output), count in calls.items()
+                for (call_input, call_read, call_write, call_output), count in (
+                    calls.items()
+                )
             ),
             Decimal(0),
         )
@@ -78,6 +91,15 @@ def price(
 def _share(tokens: int, requests: int, call: int) -> int:
     """The tokens of one call when `tokens` are spread evenly over `requests` calls."""
     return tokens // requests + (call < tokens % requests)
+
+
+def dollars(usd: Decimal) -> str:
+    """US dollars to a tenth of a cent, with anything smaller said as such."""
+    if usd == 0:
+        return "$0.000"
+    if usd < Decimal("0.001"):
+        return "under $0.001"
+    return f"${usd:.3f}"
 
 
 class CostEstimate(BaseModel):

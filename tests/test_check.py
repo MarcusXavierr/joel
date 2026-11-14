@@ -17,6 +17,7 @@ from errant.annotator import Annotator  # type: ignore[import-untyped]
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.usage import RequestUsage
 
 from joel.check import CheckResult, run_check
@@ -71,10 +72,12 @@ class FakeTranscriber:
 class PipelineModel:
     """A model that answers both LLM steps by content, so call order doesn't matter.
 
-    Every call costs 100 input and 10 output tokens.
+    Every call costs 100 input and 10 output tokens, `cache_read_tokens` of the
+    input read from the prompt cache.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, cache_read_tokens: int = 0) -> None:
+        self.cache_read_tokens = cache_read_tokens
         self.prompts: list[str] = []
         self.model = FunctionModel(self.respond)
 
@@ -105,7 +108,11 @@ class PipelineModel:
             answer = {"sentences": items}
         return ModelResponse(
             parts=[ToolCallPart(tool.name, answer)],
-            usage=RequestUsage(input_tokens=100, output_tokens=10),
+            usage=RequestUsage(
+                input_tokens=100,
+                output_tokens=10,
+                cache_read_tokens=self.cache_read_tokens,
+            ),
         )
 
 
@@ -228,7 +235,7 @@ async def test_a_silent_recording_costs_nothing(annotator: Annotator) -> None:
     assert (result.requests, result.cost_usd) == (0, Decimal(0))
     assert render(result, show_uncertain=False) == (
         "No mistakes found.\n\n"
-        f"Cost: $0.00 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
+        f"Cost: $0.000 for 0 model calls (0 input and 0 output tokens) with {MODEL}."
     )
 
 
@@ -270,6 +277,81 @@ async def test_at_most_eight_model_calls_run_at_once(annotator: Annotator) -> No
 
     assert result.requests == 40
     assert peak == 8
+
+
+@pytest.mark.anyio
+async def test_each_step_runs_its_first_call_alone(annotator: Annotator) -> None:
+    answers = PipelineModel()
+    started: dict[str, list[int]] = {"cleanup": [], "correct": []}
+    finished = {"cleanup": 0, "correct": 0}
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tool = info.output_tools[0]
+        step = (
+            "cleanup"
+            if "drop" in tool.parameters_json_schema["properties"]
+            else "correct"
+        )
+        started[step].append(finished[step])
+        await asyncio.sleep(0.01)
+        finished[step] += 1
+        return answers.respond(messages, info)
+
+    await run_check(
+        Path("talk.m4a"),
+        FakeTranscriber("local", unscored(*["He go home."] * 4)),
+        model=FunctionModel(respond),
+        model_name=MODEL,
+        min_confidence=0.67,
+        annotator=annotator,
+        block_sentences=1,
+    )
+
+    # The first call writes the prompt cache; the others start once it's done.
+    assert started == {"cleanup": [0, 1, 1, 1], "correct": [0, 1, 1, 1]}
+
+
+@pytest.mark.anyio
+async def test_every_call_asks_to_cache_only_the_instructions(
+    annotator: Annotator,
+) -> None:
+    answers = PipelineModel()
+    settings: list[object] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        settings.append(info.model_request_parameters.cache)
+        return answers.respond(messages, info)
+
+    # Only a model that says it caches is handed the cache setting.
+    caching = FunctionModel(respond, profile=ModelProfile(supports_cache=True))
+    await run_check(
+        Path("talk.m4a"),
+        FakeTranscriber("local", spoken_words()),
+        model=caching,
+        model_name=MODEL,
+        min_confidence=0.67,
+        annotator=annotator,
+        block_sentences=1,
+    )
+
+    assert settings == [{"messages": False}] * 6
+
+
+@pytest.mark.anyio
+async def test_tokens_read_from_the_cache_are_counted_and_cost_less(
+    annotator: Annotator,
+) -> None:
+    words = spoken_words()
+
+    cached = await check(
+        FakeTranscriber("local", words), PipelineModel(cache_read_tokens=80), annotator
+    )
+    uncached = await check(FakeTranscriber("local", words), PipelineModel(), annotator)
+
+    assert (cached.requests, cached.input_tokens) == (2, 200)
+    assert (cached.cache_read_tokens, cached.cache_write_tokens) == (160, 0)
+    assert cached.cost_usd is not None and uncached.cost_usd is not None
+    assert cached.cost_usd < uncached.cost_usd
 
 
 @pytest.fixture

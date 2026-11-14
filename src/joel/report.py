@@ -1,9 +1,8 @@
 """Pipeline step 7: the terminal report, built from a CheckResult alone."""
 
-from decimal import Decimal
-
 from joel.check import CheckResult
 from joel.confidence import FilteredEdit
+from joel.cost import dollars
 from joel.edits import Edit
 from joel.transcript import Word
 
@@ -121,17 +120,15 @@ def _clock(ms: int) -> str:
 def _cost(result: CheckResult) -> str:
     n = result.requests
     calls = f"{n} model call{'s' if n != 1 else ''}"
-    tokens = f"{result.input_tokens} input and {result.output_tokens} output tokens"
+    read = result.cache_read_tokens
+    cached = f" ({read} read from cache)" if read else ""
+    tokens = (
+        f"{result.input_tokens} input{cached} and {result.output_tokens} output tokens"
+    )
     usd = result.cost_usd
     if usd is None:
         return (
             f"Cost: unknown, genai-prices has no price for {result.model} "
             f"({calls}, {tokens})."
         )
-    if usd == 0:
-        money = "$0.00"
-    elif usd < Decimal("0.01"):
-        money = "under $0.01"
-    else:
-        money = f"${usd:.2f}"
-    return f"Cost: {money} for {calls} ({tokens}) with {result.model}."
+    return f"Cost: {dollars(usd)} for {calls} ({tokens}) with {result.model}."

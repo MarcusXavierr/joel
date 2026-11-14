@@ -22,7 +22,7 @@ $ joel check talk.m4a
   better:  I threw a party last week.
            00:41.0  make → threw  naturalness
 
-Cost: under $0.01 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
+Cost: $0.008 for 2 model calls (1400 input and 145 output tokens) with anthropic:claude-opus-5-5.
 ```
 
 Each entry is one sentence, headed by where to find it in the recording. Under what you said comes the corrected sentence, then one line per change, starting with the second you said it. `R:VERB:SVA` is the kind of mistake, here a verb that doesn't agree with its subject. A `naturalness` change is one a native speaker would make even though the sentence is already grammatical. The `said:` line leaves out the hesitations Joel set aside. The last line is what the language model calls cost for this recording.
@@ -140,7 +140,7 @@ Before you send a long recording through a paid model, you can ask what it would
 ```
 $ joel estimate talk.m4a
 talk.m4a: 10:00 of audio, about 1500 words in 125 sentences
-anthropic:claude-opus-5-5: about $0.26 for 42 calls (36795 input and 5883 output tokens)
+anthropic:claude-opus-5-5: about $0.265 for 42 calls (36795 input and 5883 output tokens)
 Assumes 150 words per minute, 12 words per sentence and 6 sentences per call, with no prompt caching; a retried call costs extra.
 ```
 

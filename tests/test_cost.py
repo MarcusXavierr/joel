@@ -12,6 +12,16 @@ def test_prices_tokens_with_the_bundled_price_table() -> None:
     ) == Decimal("24")
 
 
+def test_tokens_read_from_the_cache_cost_less() -> None:
+    # Opus 5.5 reads cached input at $0.20 per million, against $4 uncached.
+    model = "anthropic:claude-opus-5-5"
+
+    cached = price(model, 1_000_000, 0, requests=1, cache_read_tokens=1_000_000)
+
+    assert cached == Decimal("0.2")
+    assert price(model, 1_000_000, 0, requests=1) == Decimal(4)
+
+
 def test_many_small_requests_never_reach_a_long_context_price() -> None:
     # Sonnet 4.5 charges more per token once one request passes 200k input
     # tokens. A run's 300k tokens are spread over many short requests.

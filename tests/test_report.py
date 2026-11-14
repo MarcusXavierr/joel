@@ -25,6 +25,7 @@ def result(
     cost: Decimal | None = Decimal("0.0731"),
     model: str = MODEL,
     requests: int = 2,
+    cache_read_tokens: int = 0,
 ) -> CheckResult:
     """One sentence, its first "the" dropped, with a grammar and a naturalness edit."""
     words = [
@@ -75,6 +76,8 @@ def result(
         requests=requests,
         input_tokens=100 * requests,
         output_tokens=10 * requests,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=0,
         cost_usd=cost,
     )
 
@@ -86,7 +89,7 @@ ENTRY = """\
            00:12.4  is → are         R:VERB:SVA   grammar
   better:  There are a lot of people in the room.
            00:12.8  many → a lot of  naturalness"""
-COST = f"Cost: $0.07 for 2 model calls (200 input and 20 output tokens) with {MODEL}."
+COST = f"Cost: $0.073 for 2 model calls (200 input and 20 output tokens) with {MODEL}."
 
 
 def test_each_sentence_shows_its_span_and_when_each_mistake_was_said() -> None:
@@ -208,6 +211,15 @@ def test_a_word_without_a_time_gets_placeholder_times() -> None:
     )
 
 
+def test_the_cost_line_says_how_much_input_came_from_the_cache() -> None:
+    report = render(result(cache_read_tokens=150), show_uncertain=False)
+
+    assert report.splitlines()[-1] == (
+        "Cost: $0.073 for 2 model calls (200 input (150 read from cache) and 20 "
+        f"output tokens) with {MODEL}."
+    )
+
+
 def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:
     report = render(result(cost=None, model="ollama:llama3"), show_uncertain=False)
 
@@ -223,21 +235,28 @@ def test_a_model_without_a_price_says_the_cost_is_unknown() -> None:
         (
             Decimal(0),
             1,
-            "Cost: $0.00 for 1 model call (100 input and 10 output tokens)",
+            "Cost: $0.000 for 1 model call (100 input and 10 output tokens)",
         ),
         (
-            Decimal("0.004"),
+            Decimal("0.0004"),
             1,
-            "Cost: under $0.01 for 1 model call (100 input and 10 output tokens)",
+            "Cost: under $0.001 for 1 model call (100 input and 10 output tokens)",
         ),
         (
-            Decimal("1.236"),
+            Decimal("0.0041"),
+            1,
+            "Cost: $0.004 for 1 model call (100 input and 10 output tokens)",
+        ),
+        (
+            Decimal("1.2364"),
             3,
-            "Cost: $1.24 for 3 model calls (300 input and 30 output tokens)",
+            "Cost: $1.236 for 3 model calls (300 input and 30 output tokens)",
         ),
     ],
 )
-def test_the_cost_line_rounds_to_cents(cost: Decimal, requests: int, line: str) -> None:
+def test_the_cost_line_shows_three_decimals(
+    cost: Decimal, requests: int, line: str
+) -> None:
     report = render(result(cost=cost, requests=requests), show_uncertain=False)
 
     assert report.splitlines()[-1] == f"{line} with {MODEL}."

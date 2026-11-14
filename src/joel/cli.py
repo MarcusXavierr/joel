@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Callable, Sequence
-from decimal import Decimal
 from pathlib import Path
 
 import pydantic_ai
@@ -18,6 +17,7 @@ from joel.cost import (
     SPEAKING_RATE_WPM,
     WORDS_PER_SENTENCE,
     PriceUnavailableError,
+    dollars,
     estimate_cost,
 )
 from joel.decode import SAMPLE_RATE, DecodeError, decode
@@ -203,7 +203,9 @@ def _estimate(args: argparse.Namespace) -> int:
         print(f"joel: error: {exc}", file=sys.stderr)
         return 1
     minutes, secs = divmod(round(seconds), 60)
-    money = "under $0.01" if cost.usd < Decimal("0.01") else f"about ${cost.usd:.2f}"
+    money = dollars(cost.usd)
+    if money.startswith("$"):
+        money = f"about {money}"
     print(
         f"{audio}: {minutes}:{secs:02d} of audio, "
         f"about {cost.words} words in {cost.sentences} sentences"
